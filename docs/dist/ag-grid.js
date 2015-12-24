@@ -30,6 +30,9 @@ var ag;
                 if (this.pinnedColumnCount) {
                     result += ', pinnedColumnCount: ' + this.pinnedColumnCount;
                 }
+                if (this.pinnedRightColumnCount) {
+                    result += ', pinnedRightColumnCount: ' + this.pinnedRightColumnCount;
+                }
                 if (typeof this.finished == 'boolean') {
                     result += ', finished: ' + this.finished;
                 }
@@ -56,6 +59,10 @@ var ag;
                 this.pinnedColumnCount = pinnedColumnCount;
                 return this;
             };
+            ColumnChangeEvent.prototype.withPinnedRightColumnCount = function (pinnedRightColumnCount) {
+                this.pinnedRightColumnCount = pinnedRightColumnCount;
+                return this;
+            };
             ColumnChangeEvent.prototype.withToIndex = function (toIndex) {
                 this.toIndex = toIndex;
                 return this;
@@ -68,6 +75,9 @@ var ag;
             };
             ColumnChangeEvent.prototype.getPinnedColumnCount = function () {
                 return this.pinnedColumnCount;
+            };
+            ColumnChangeEvent.prototype.getPinnedRightColumnCount = function () {
+                return this.pinnedRightColumnCount;
             };
             ColumnChangeEvent.prototype.getType = function () {
                 return this.type;
@@ -538,12 +548,14 @@ var ag;
     var grid;
     (function (grid) {
         var ColumnGroup = (function () {
-            function ColumnGroup(pinned, name) {
+            function ColumnGroup(pinned, pinnedLeft, pinnedRight, name) {
                 this.allColumns = [];
                 this.displayedColumns = [];
                 this.expandable = false;
                 this.expanded = false;
                 this.pinned = pinned;
+                this.pinnedLeft = pinnedLeft;
+                this.pinnedRight = pinnedRight;
                 this.name = name;
             }
             ColumnGroup.prototype.getMinimumWidth = function () {
@@ -804,6 +816,20 @@ var ag;
                     return 0;
                 }
             };
+            GridOptionsWrapper.prototype.getPinnedRightColCount = function () {
+                // if not using scrolls, then pinned columns doesn't make
+                // sense, so always return 0
+                if (this.isForPrint()) {
+                    return 0;
+                }
+                if (this.gridOptions.pinnedRightColumnCount) {
+                    //in case user puts in a string, cast to number
+                    return Number(this.gridOptions.pinnedRightColumnCount);
+                }
+                else {
+                    return 0;
+                }
+            };
             GridOptionsWrapper.prototype.getLocaleTextFunc = function () {
                 if (this.gridOptions.localeTextFunc) {
                     return this.gridOptions.localeTextFunc;
@@ -893,6 +919,7 @@ var ag;
             Events.EVENT_COLUMN_RESIZED = 'columnResized';
             /** One or more columns was resized. If just one, the column in the event is set. */
             Events.EVENT_COLUMN_PINNED_COUNT_CHANGED = 'columnPinnedCountChanged';
+            Events.EVENT_COLUMN_PINNED_RIGHT_COUNT_CHANGED = 'columnPinnedRightCountChanged';
             Events.EVENT_MODEL_UPDATED = 'modelUpdated';
             Events.EVENT_CELL_CLICKED = 'cellClicked';
             Events.EVENT_CELL_DOUBLE_CLICKED = 'cellDoubleClicked';
@@ -999,6 +1026,7 @@ var ag;
                 eventService.addEventListener(grid.Events.EVENT_COLUMN_GROUP_OPENED, this.fireColumnEvent.bind(this));
                 eventService.addEventListener(grid.Events.EVENT_COLUMN_RESIZED, this.fireColumnEvent.bind(this));
                 eventService.addEventListener(grid.Events.EVENT_COLUMN_PINNED_COUNT_CHANGED, this.fireColumnEvent.bind(this));
+                eventService.addEventListener(grid.Events.EVENT_COLUMN_PINNED_RIGHT_COUNT_CHANGED, this.fireColumnEvent.bind(this));
             };
             // common logic across all the fire methods
             MasterSlaveService.prototype.fireEvent = function (callback) {
@@ -1119,6 +1147,7 @@ var ag;
             ColumnApi.prototype.setState = function (columnState) { return this._columnController.setState(columnState); };
             ColumnApi.prototype.getState = function () { return this._columnController.getState(); };
             ColumnApi.prototype.isPinning = function () { return this._columnController.isPinning(); };
+            ColumnApi.prototype.isPinningRight = function () { return this._columnController.isPinningRight(); };
             ColumnApi.prototype.getVisibleColAfter = function (col) { return this._columnController.getVisibleColAfter(col); };
             ColumnApi.prototype.getVisibleColBefore = function (col) { return this._columnController.getVisibleColBefore(col); };
             ColumnApi.prototype.setColumnVisible = function (column, visible) { this._columnController.setColumnVisible(column, visible); };
@@ -1137,6 +1166,7 @@ var ag;
             ColumnApi.prototype.addValueColumn = function (column) { this._columnController.addValueColumn(column); };
             ColumnApi.prototype.removePivotColumn = function (column) { this._columnController.removePivotColumn(column); };
             ColumnApi.prototype.setPinnedColumnCount = function (count) { this._columnController.setPinnedColumnCount(count); };
+            ColumnApi.prototype.setPinnedRightColumnCount = function (count) { this._columnController.setPinnedRightColumnCount(count); };
             ColumnApi.prototype.addPivotColumn = function (column) { this._columnController.addPivotColumn(column); };
             ColumnApi.prototype.getHeaderGroups = function () { return this._columnController.getHeaderGroups(); };
             ColumnApi.prototype.hideColumn = function (colId, hide) { this._columnController.hideColumns([colId], hide); };
@@ -1156,9 +1186,13 @@ var ag;
                 this.masterSlaveController = masterSlaveController;
                 this.eventService = eventService;
                 this.pinnedColumnCount = gridOptionsWrapper.getPinnedColCount();
+                this.pinnedRightColumnCount = gridOptionsWrapper.getPinnedRightColCount();
                 // check for negative or non-number values
                 if (!(this.pinnedColumnCount > 0)) {
                     this.pinnedColumnCount = 0;
+                }
+                if (!(this.pinnedRightColumnCount > 0)) {
+                    this.pinnedRightColumnCount = 0;
                 }
             };
             ColumnController.prototype.getColumnApi = function () {
@@ -1175,7 +1209,12 @@ var ag;
             // used by:
             // + angularGrid -> setting pinned body width
             ColumnController.prototype.getPinnedContainerWidth = function () {
-                return this.getTotalColWidth(true);
+                return this.getTotalColWidth("pinnedLeft");
+            };
+            // used by:
+            // + angularGrid -> setting pinned body width
+            ColumnController.prototype.getPinnedRightContainerWidth = function () {
+                return this.getTotalColWidth("pinnedRight");
             };
             ColumnController.prototype.addPivotColumn = function (column) {
                 if (this.allColumns.indexOf(column) < 0) {
@@ -1206,6 +1245,20 @@ var ag;
                 this.updateModel();
                 var event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_PINNED_COUNT_CHANGED).withPinnedColumnCount(count);
                 this.eventService.dispatchEvent(grid.Events.EVENT_COLUMN_PINNED_COUNT_CHANGED, event);
+            };
+            ColumnController.prototype.setPinnedRightColumnCount = function (count) {
+                if (!(typeof count === 'number')) {
+                    console.warn('ag-Grid: setPinnedRightColumnCount: count must be a number');
+                    return;
+                }
+                if (count < 0) {
+                    console.warn('ag-Grid: setPinnedRightColumnCount: count must be zero or greater');
+                    return;
+                }
+                this.pinnedRightColumnCount = count;
+                this.updateModel();
+                var event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_PINNED_RIGHT_COUNT_CHANGED).withPinnedRightColumnCount(count);
+                this.eventService.dispatchEvent(grid.Events.EVENT_COLUMN_PINNED_RIGHT_COUNT_CHANGED, event);
             };
             ColumnController.prototype.removePivotColumn = function (column) {
                 if (this.pivotColumns.indexOf(column) < 0) {
@@ -1357,7 +1410,10 @@ var ag;
                 }
             };
             ColumnController.prototype.isPinning = function () {
-                return this.visibleColumns && this.visibleColumns.length > 0 && this.visibleColumns[0].pinned;
+                return this.visibleColumns && this.visibleColumns.length > 0 && this.visibleColumns[0].pinnedLeft;
+            };
+            ColumnController.prototype.isPinningRight = function () {
+                return this.visibleColumns && this.visibleColumns.length > 0 && this.visibleColumns[this.visibleColumns.length - 1].pinnedRight;
             };
             ColumnController.prototype.getState = function () {
                 if (!this.allColumns || this.allColumns.length < 0) {
@@ -1679,7 +1735,9 @@ var ag;
                     // create new group, if it's needed
                     if (newGroupNeeded) {
                         var pinned = column.pinned;
-                        currentGroup = new grid.ColumnGroup(pinned, column.colDef.headerGroup);
+                        var pinnedLeft = column.pinnedLeft;
+                        var pinnedRight = column.pinnedRight;
+                        currentGroup = new grid.ColumnGroup(pinned, pinnedLeft, pinnedRight, column.colDef.headerGroup);
                         that.columnGroups.push(currentGroup);
                     }
                     currentGroup.addColumn(column);
@@ -1735,6 +1793,14 @@ var ag;
                 for (var i = 0; i < this.visibleColumns.length; i++) {
                     var pinned = i < this.pinnedColumnCount;
                     this.visibleColumns[i].pinned = pinned;
+                    this.visibleColumns[i].pinnedLeft = pinned;
+                }
+                for (var i = this.visibleColumns.length - 1; i >= 0; i--) {
+                    var pinned = i >= this.visibleColumns.length - this.pinnedRightColumnCount;
+                    if (pinned) {
+                        this.visibleColumns[i].pinned = pinned;
+                        this.visibleColumns[i].pinnedRight = pinned;
+                    }
                 }
             };
             ColumnController.prototype.createColumns = function (colDefs) {
@@ -1798,12 +1864,14 @@ var ag;
                     return colDef.width;
                 }
             };
-            // call with true (pinned), false (not-pinned) or undefined (all columns)
+            // call with "pinnedLeft" (pinnedLeft), "pinnedRight" (pinnedRight), false (not-pinned) or undefined (all columns)
             ColumnController.prototype.getTotalColWidth = function (includePinned) {
                 var widthSoFar = 0;
-                var pinedNotImportant = typeof includePinned !== 'boolean';
+                var includePinnedIsString = typeof includePinned === "string";
+                var pinedNotImportant = typeof includePinned !== 'boolean' && !includePinnedIsString;
                 this.displayedColumns.forEach(function (column) {
-                    var includeThisCol = pinedNotImportant || column.pinned === includePinned;
+                    var isPinnedWithDirection = includePinnedIsString && column[includePinned] === true;
+                    var includeThisCol = pinedNotImportant || column.pinned === includePinned || isPinnedWithDirection;
                     if (includeThisCol) {
                         widthSoFar += column.actualWidth;
                     }
@@ -3574,8 +3642,7 @@ var ag;
 var __extends = (this && this.__extends) || function (d, b) {
     for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
     function __() { this.constructor = d; }
-    __.prototype = b.prototype;
-    d.prototype = new __();
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
 };
 var ag;
 (function (ag) {
@@ -4411,7 +4478,7 @@ var ag;
     (function (grid) {
         var _ = grid.Utils;
         var RenderedRow = (function () {
-            function RenderedRow(gridOptionsWrapper, valueService, parentScope, angularGrid, columnController, expressionService, cellRendererMap, selectionRendererFactory, $compile, templateService, selectionController, rowRenderer, eBodyContainer, ePinnedContainer, node, rowIndex, eventService) {
+            function RenderedRow(gridOptionsWrapper, valueService, parentScope, angularGrid, columnController, expressionService, cellRendererMap, selectionRendererFactory, $compile, templateService, selectionController, rowRenderer, eBodyContainer, ePinnedContainer, ePinnedRightContainer, node, rowIndex, eventService) {
                 this.renderedCells = {};
                 this.gridOptionsWrapper = gridOptionsWrapper;
                 this.valueService = valueService;
@@ -4427,13 +4494,18 @@ var ag;
                 this.rowRenderer = rowRenderer;
                 this.eBodyContainer = eBodyContainer;
                 this.ePinnedContainer = ePinnedContainer;
+                this.ePinnedRightContainer = ePinnedRightContainer;
                 this.pinning = columnController.isPinning();
+                this.pinningRight = columnController.isPinningRight();
                 this.eventService = eventService;
                 var groupHeaderTakesEntireRow = this.gridOptionsWrapper.isGroupUseEntireRow();
                 var rowIsHeaderThatSpans = node.group && groupHeaderTakesEntireRow;
                 this.vBodyRow = this.createRowContainer();
                 if (this.pinning) {
                     this.vPinnedRow = this.createRowContainer();
+                }
+                if (this.pinningRight) {
+                    this.vPinnedRightRow = this.createRowContainer();
                 }
                 this.rowIndex = rowIndex;
                 this.node = node;
@@ -4454,12 +4526,18 @@ var ag;
                 if (this.pinning) {
                     this.vPinnedRow.setAttribute('row', rowStr);
                 }
+                if (this.pinningRight) {
+                    this.vPinnedRightRow.setAttribute('row', rowStr);
+                }
                 if (typeof this.gridOptionsWrapper.getBusinessKeyForNodeFunc() === 'function') {
                     var businessKey = this.gridOptionsWrapper.getBusinessKeyForNodeFunc()(this.node);
                     if (typeof businessKey === 'string' || typeof businessKey === 'number') {
                         this.vBodyRow.setAttribute('row-id', businessKey);
                         if (this.pinning) {
                             this.vPinnedRow.setAttribute('row-id', businessKey);
+                        }
+                        if (this.pinningRight) {
+                            this.vPinnedRightRow.setAttribute('row-id', businessKey);
                         }
                     }
                 }
@@ -4469,10 +4547,16 @@ var ag;
                     if (this.pinning) {
                         this.vPinnedRow.style.top = (this.gridOptionsWrapper.getRowHeight() * this.rowIndex) + "px";
                     }
+                    if (this.pinningRight) {
+                        this.vPinnedRightRow.style.top = (this.gridOptionsWrapper.getRowHeight() * this.rowIndex) + "px";
+                    }
                 }
                 this.vBodyRow.style.height = (this.gridOptionsWrapper.getRowHeight()) + "px";
                 if (this.pinning) {
                     this.vPinnedRow.style.height = (this.gridOptionsWrapper.getRowHeight()) + "px";
+                }
+                if (this.pinningRight) {
+                    this.vPinnedRightRow.style.height = (this.gridOptionsWrapper.getRowHeight()) + "px";
                 }
                 // if group item, insert the first row
                 if (rowIsHeaderThatSpans) {
@@ -4482,15 +4566,24 @@ var ag;
                 if (this.pinning) {
                     this.bindVirtualElement(this.vPinnedRow);
                 }
+                if (this.pinningRight) {
+                    this.bindVirtualElement(this.vPinnedRightRow);
+                }
                 if (this.scope) {
                     this.$compile(this.vBodyRow.getElement())(this.scope);
                     if (this.pinning) {
                         this.$compile(this.vPinnedRow.getElement())(this.scope);
                     }
+                    if (this.pinningRight) {
+                        this.$compile(this.vPinnedRightRow.getElement())(this.scope);
+                    }
                 }
                 this.eBodyContainer.appendChild(this.vBodyRow.getElement());
                 if (this.pinning) {
                     this.ePinnedContainer.appendChild(this.vPinnedRow.getElement());
+                }
+                if (this.pinningRight) {
+                    this.ePinnedRightContainer.appendChild(this.vPinnedRightRow.getElement());
                 }
             }
             RenderedRow.prototype.onRowSelected = function (selected) {
@@ -4522,6 +4615,9 @@ var ag;
                 if (this.pinning) {
                     this.ePinnedContainer.removeChild(this.vPinnedRow.getElement());
                 }
+                if (this.pinningRight) {
+                    this.ePinnedRightContainer.removeChild(this.vPinnedRightRow.getElement());
+                }
                 this.eBodyContainer.removeChild(this.vBodyRow.getElement());
             };
             RenderedRow.prototype.destroyScope = function () {
@@ -4546,8 +4642,11 @@ var ag;
                     var firstCol = i === 0;
                     var renderedCell = new grid.RenderedCell(firstCol, column, this.$compile, this.rowRenderer, this.gridOptionsWrapper, this.expressionService, this.selectionRendererFactory, this.selectionController, this.templateService, this.cellRendererMap, this.node, this.rowIndex, this.scope, this.columnController, this.valueService, this.eventService);
                     var vGridCell = renderedCell.getVGridCell();
-                    if (column.pinned) {
+                    if (column.pinnedLeft && this.vPinnedRow) {
                         this.vPinnedRow.appendChild(vGridCell);
+                    }
+                    else if (column.pinnedRight && this.vPinnedRightRow) {
+                        this.vPinnedRightRow.appendChild(vGridCell);
                     }
                     else {
                         this.vBodyRow.appendChild(vGridCell);
@@ -4564,6 +4663,11 @@ var ag;
                 var eGroupRow = this.createGroupSpanningEntireRowCell(false);
                 if (this.pinning) {
                     this.vPinnedRow.appendChild(eGroupRow);
+                    var eGroupRowPadding = this.createGroupSpanningEntireRowCell(true);
+                    this.vBodyRow.appendChild(eGroupRowPadding);
+                }
+                else if (this.pinningRight) {
+                    this.vPinnedRightRow.appendChild(eGroupRow);
                     var eGroupRowPadding = this.createGroupSpanningEntireRowCell(true);
                     this.vBodyRow.appendChild(eGroupRowPadding);
                 }
@@ -4653,6 +4757,9 @@ var ag;
                         if (this.pinning) {
                             this.vPinnedRow.addStyles(rowStyle);
                         }
+                        if (this.pinningRight) {
+                            this.vPinnedRightRow.addStyles(rowStyle);
+                        }
                     }
                 }
                 var rowStyleFunc = this.gridOptionsWrapper.getRowStyleFunc();
@@ -4668,6 +4775,9 @@ var ag;
                     this.vBodyRow.addStyles(cssToUseFromFunc);
                     if (this.pinning) {
                         this.vPinnedRow.addStyles(cssToUseFromFunc);
+                    }
+                    if (this.pinningRight) {
+                        this.vPinnedRightRow.addStyles(cssToUseFromFunc);
                     }
                 }
             };
@@ -4794,6 +4904,9 @@ var ag;
                 this.vBodyRow.addClasses(classes);
                 if (this.pinning) {
                     this.vPinnedRow.addClasses(classes);
+                }
+                if (this.pinningRight) {
+                    this.vPinnedRightRow.addClasses(classes);
                 }
             };
             return RenderedRow;
@@ -5160,10 +5273,12 @@ var ag;
             RowRenderer.prototype.findAllElements = function (gridPanel) {
                 this.eBodyContainer = gridPanel.getBodyContainer();
                 this.ePinnedColsContainer = gridPanel.getPinnedColsContainer();
+                this.ePinnedRightColsContainer = gridPanel.getPinnedRightColsContainer();
                 this.eFloatingTopContainer = gridPanel.getFloatingTopContainer();
                 this.eFloatingTopPinnedContainer = gridPanel.getPinnedFloatingTop();
                 this.eFloatingBottomContainer = gridPanel.getFloatingBottomContainer();
                 this.eFloatingBottomPinnedContainer = gridPanel.getPinnedFloatingBottom();
+                this.eFloatingBottomPinnedRightContainer = gridPanel.getPinnedRightFloatingBottom();
                 this.eBodyViewport = gridPanel.getBodyViewport();
                 this.eParentsOfRows = gridPanel.getRowsParent();
                 this.eAllBodyContainers = [this.eBodyContainer, this.eFloatingBottomContainer,
@@ -5172,10 +5287,10 @@ var ag;
                     this.eFloatingTopPinnedContainer];
             };
             RowRenderer.prototype.refreshAllFloatingRows = function () {
-                this.refreshFloatingRows(this.renderedTopFloatingRows, this.gridOptionsWrapper.getFloatingTopRowData(), this.eFloatingTopPinnedContainer, this.eFloatingTopContainer, true);
-                this.refreshFloatingRows(this.renderedBottomFloatingRows, this.gridOptionsWrapper.getFloatingBottomRowData(), this.eFloatingBottomPinnedContainer, this.eFloatingBottomContainer, false);
+                this.refreshFloatingRows(this.renderedTopFloatingRows, this.gridOptionsWrapper.getFloatingTopRowData(), this.eFloatingTopPinnedContainer, this.eFloatingTopPinnedRightContainer, this.eFloatingTopContainer, true);
+                this.refreshFloatingRows(this.renderedBottomFloatingRows, this.gridOptionsWrapper.getFloatingBottomRowData(), this.eFloatingBottomPinnedContainer, this.eFloatingBottomPinnedRightContainer, this.eFloatingBottomContainer, false);
             };
-            RowRenderer.prototype.refreshFloatingRows = function (renderedRows, rowData, pinnedContainer, bodyContainer, isTop) {
+            RowRenderer.prototype.refreshFloatingRows = function (renderedRows, rowData, pinnedContainer, pinnedRightContainer, bodyContainer, isTop) {
                 var _this = this;
                 renderedRows.forEach(function (row) {
                     row.destroy();
@@ -5196,7 +5311,7 @@ var ag;
                             floatingTop: isTop,
                             floatingBottom: !isTop
                         };
-                        var renderedRow = new grid.RenderedRow(_this.gridOptionsWrapper, _this.valueService, _this.$scope, _this.angularGrid, _this.columnModel, _this.expressionService, _this.cellRendererMap, _this.selectionRendererFactory, _this.$compile, _this.templateService, _this.selectionController, _this, bodyContainer, pinnedContainer, node, rowIndex, _this.eventService);
+                        var renderedRow = new grid.RenderedRow(_this.gridOptionsWrapper, _this.valueService, _this.$scope, _this.angularGrid, _this.columnModel, _this.expressionService, _this.cellRendererMap, _this.selectionRendererFactory, _this.$compile, _this.templateService, _this.selectionController, _this, bodyContainer, pinnedContainer, pinnedRightContainer, node, rowIndex, _this.eventService);
                         renderedRow.setMainRowWidth(mainRowWidth);
                         renderedRows.push(renderedRow);
                     });
@@ -5383,7 +5498,7 @@ var ag;
                 if (!columns || columns.length == 0) {
                     return;
                 }
-                var renderedRow = new grid.RenderedRow(this.gridOptionsWrapper, this.valueService, this.$scope, this.angularGrid, this.columnModel, this.expressionService, this.cellRendererMap, this.selectionRendererFactory, this.$compile, this.templateService, this.selectionController, this, this.eBodyContainer, this.ePinnedColsContainer, node, rowIndex, this.eventService);
+                var renderedRow = new grid.RenderedRow(this.gridOptionsWrapper, this.valueService, this.$scope, this.angularGrid, this.columnModel, this.expressionService, this.cellRendererMap, this.selectionRendererFactory, this.$compile, this.templateService, this.selectionController, this, this.eBodyContainer, this.ePinnedColsContainer, this.ePinnedRightColsContainer, node, rowIndex, this.eventService);
                 renderedRow.setMainRowWidth(mainRowWidth);
                 this.renderedRows[rowIndex] = renderedRow;
             };
@@ -6538,11 +6653,13 @@ var ag;
             };
             HeaderRenderer.prototype.findAllElements = function (gridPanel) {
                 this.ePinnedHeader = gridPanel.getPinnedHeader();
+                this.ePinnedRightHeader = gridPanel.getPinnedRightHeader();
                 this.eHeaderContainer = gridPanel.getHeaderContainer();
                 this.eRoot = gridPanel.getRoot();
             };
             HeaderRenderer.prototype.refreshHeader = function () {
                 utils.removeAllChildren(this.ePinnedHeader);
+                utils.removeAllChildren(this.ePinnedRightHeader);
                 utils.removeAllChildren(this.eHeaderContainer);
                 this.headerElements.forEach(function (headerElement) {
                     headerElement.destroy();
@@ -6555,23 +6672,41 @@ var ag;
                     this.insertHeadersWithoutGrouping();
                 }
             };
+            HeaderRenderer.prototype.getColumnGroupContainer = function (columnGroup) {
+                if (columnGroup.pinnedLeft) {
+                    return this.ePinnedHeader;
+                }
+                else if (columnGroup.pinnedRight) {
+                    return this.ePinnedRightHeader;
+                }
+                return this.eHeaderContainer;
+            };
             HeaderRenderer.prototype.insertHeadersWithGrouping = function () {
                 var _this = this;
                 var groups = this.columnController.getHeaderGroups();
-                groups.forEach(function (columnGroup) {
+                groups.forEach(function (columnGroup, index) {
                     var renderedHeaderGroup = new grid.RenderedHeaderGroupCell(columnGroup, _this.gridOptionsWrapper, _this.columnController, _this.eRoot, _this.angularGrid, _this.$scope, _this.filterManager, _this.$compile);
                     _this.headerElements.push(renderedHeaderGroup);
-                    var eContainerToAddTo = columnGroup.pinned ? _this.ePinnedHeader : _this.eHeaderContainer;
+                    var eContainerToAddTo = _this.getColumnGroupContainer(columnGroup);
                     eContainerToAddTo.appendChild(renderedHeaderGroup.getGui());
                 });
             };
+            HeaderRenderer.prototype.getColumnContainer = function (column) {
+                if (column.pinnedLeft) {
+                    return this.ePinnedHeader;
+                }
+                else if (column.pinnedRight) {
+                    return this.ePinnedRightHeader;
+                }
+                return this.eHeaderContainer;
+            };
             HeaderRenderer.prototype.insertHeadersWithoutGrouping = function () {
                 var _this = this;
-                this.columnController.getDisplayedColumns().forEach(function (column) {
+                this.columnController.getDisplayedColumns().forEach(function (column, index) {
                     // only include the first x cols
                     var renderedHeaderCell = new grid.RenderedHeaderCell(column, null, _this.gridOptionsWrapper, _this.$scope, _this.filterManager, _this.columnController, _this.$compile, _this.angularGrid, _this.eRoot);
                     _this.headerElements.push(renderedHeaderCell);
-                    var eContainerToAddTo = column.pinned ? _this.ePinnedHeader : _this.eHeaderContainer;
+                    var eContainerToAddTo = _this.getColumnContainer(column);
                     eContainerToAddTo.appendChild(renderedHeaderCell.getGui());
                 });
             };
@@ -7963,7 +8098,7 @@ var ag;
             BorderLayout.prototype.getCentreHeight = function () {
                 return this.centerHeightLastTime;
             };
-            BorderLayout.prototype.layoutWidth = function () {
+            BorderLayout.prototype.getCenterWidth = function () {
                 var totalWidth = _.offsetWidth(this.eGui);
                 var eastWidth = _.offsetWidth(this.eEastWrapper);
                 var westWidth = _.offsetWidth(this.eWestWrapper);
@@ -7971,6 +8106,10 @@ var ag;
                 if (centerWidth < 0) {
                     centerWidth = 0;
                 }
+                return centerWidth;
+            };
+            BorderLayout.prototype.layoutWidth = function () {
+                var centerWidth = this.getCenterWidth();
                 this.eCenterWrapper.style.width = centerWidth + 'px';
             };
             BorderLayout.prototype.setEastVisible = function (visible) {
@@ -8022,7 +8161,7 @@ var ag;
 (function (ag) {
     var grid;
     (function (grid) {
-        var gridHtml = "<div>\n                <!-- header -->\n                <div class=\"ag-header\">\n                    <div class=\"ag-pinned-header\"></div><div class=\"ag-header-viewport\"><div class=\"ag-header-container\"></div></div>\n                </div>\n                <!-- floating top -->\n                <div class=\"ag-floating-top\">\n                    <div class=\"ag-pinned-floating-top\"></div><div class=\"ag-floating-top-viewport\"><div class=\"ag-floating-top-container\"></div></div>\n                </div>\n                <!-- floating bottom -->\n                <div class=\"ag-floating-bottom\">\n                    <div class=\"ag-pinned-floating-bottom\"></div><div class=\"ag-floating-bottom-viewport\"><div class=\"ag-floating-bottom-container\"></div></div>\n                </div>\n                <!-- body -->\n                <div class=\"ag-body\">\n                    <div class=\"ag-pinned-cols-viewport\">\n                        <div class=\"ag-pinned-cols-container\"></div>\n                    </div>\n                    <div class=\"ag-body-viewport-wrapper\">\n                        <div class=\"ag-body-viewport\">\n                            <div class=\"ag-body-container\"></div>\n                        </div>\n                    </div>\n                </div>\n            </div>";
+        var gridHtml = "<div>\n                <!-- header -->\n                <div class=\"ag-header\">\n                    <div class=\"ag-pinned-header\"></div><div class=\"ag-header-viewport\"><div class=\"ag-header-container\"></div></div>\n                    <div class=\"ag-pinned-right-header\"></div><div class=\"ag-header-viewport\"><div class=\"ag-header-container\"></div></div>\n                </div>\n                <!-- floating top -->\n                <div class=\"ag-floating-top\">\n                    <div class=\"ag-pinned-floating-top\"></div><div class=\"ag-floating-top-viewport\"><div class=\"ag-floating-top-container\"></div></div>\n                    <div class=\"ag-pinned-right-floating-top\"></div><div class=\"ag-floating-top-viewport\"><div class=\"ag-floating-top-container\"></div></div>\n                </div>\n                <!-- floating bottom -->\n                <div class=\"ag-floating-bottom\">\n                    <div class=\"ag-pinned-floating-bottom\"></div><div class=\"ag-floating-bottom-viewport\"><div class=\"ag-floating-bottom-container\"></div></div>\n                    <div class=\"ag-pinned-right-floating-bottom\"></div><div class=\"ag-floating-bottom-viewport\"><div class=\"ag-floating-bottom-container\"></div></div>\n                </div>\n                <!-- body -->\n                <div class=\"ag-body\">\n                    <div class=\"ag-pinned-cols-viewport\">\n                        <div class=\"ag-pinned-cols-container\"></div>\n                    </div>\n                    <div class=\"ag-body-viewport-wrapper\">\n                        <div class=\"ag-body-viewport\">\n                            <div class=\"ag-body-container\"></div>\n                        </div>\n                    </div>\n                    <div class=\"ag-pinned-right-cols-viewport\">\n                        <div class=\"ag-pinned-right-cols-container\"></div>\n                    </div>\n                </div>\n            </div>";
         var gridForPrintHtml = "<div>\n                <!-- header -->\n                <div class=\"ag-header-container\"></div>\n                <!-- floating top -->\n                <div class=\"ag-floating-top-container\"></div>\n                <!-- body -->\n                <div class=\"ag-body-container\"></div>\n                <!-- floating bottom -->\n                <div class=\"ag-floating-bottom-container\"></div>\n            </div>";
         // wrapping in outer div, and wrapper, is needed to center the loading icon
         // The idea for centering came from here: http://www.vanseodesign.com/css/vertical-centering/
@@ -8083,6 +8222,9 @@ var ag;
             };
             GridPanel.prototype.getPinnedFloatingBottom = function () {
                 return this.ePinnedFloatingBottom;
+            };
+            GridPanel.prototype.getPinnedRightFloatingBottom = function () {
+                return this.ePinnedRightFloatingBottom;
             };
             GridPanel.prototype.getFloatingBottomContainer = function () {
                 return this.eFloatingBottomContainer;
@@ -8218,6 +8360,9 @@ var ag;
             GridPanel.prototype.getPinnedColsContainer = function () {
                 return this.ePinnedColsContainer;
             };
+            GridPanel.prototype.getPinnedRightColsContainer = function () {
+                return this.ePinnedRightColsContainer;
+            };
             GridPanel.prototype.getHeaderContainer = function () {
                 return this.eHeaderContainer;
             };
@@ -8226,6 +8371,9 @@ var ag;
             };
             GridPanel.prototype.getPinnedHeader = function () {
                 return this.ePinnedHeader;
+            };
+            GridPanel.prototype.getPinnedRightHeader = function () {
+                return this.ePinnedRightHeader;
             };
             GridPanel.prototype.getRowsParent = function () {
                 return this.eParentsOfRows;
@@ -8248,21 +8396,28 @@ var ag;
                     this.eBodyViewportWrapper = this.queryHtmlElement('.ag-body-viewport-wrapper');
                     this.ePinnedColsContainer = this.queryHtmlElement('.ag-pinned-cols-container');
                     this.ePinnedColsViewport = this.queryHtmlElement('.ag-pinned-cols-viewport');
+                    this.ePinnedRightColsContainer = this.queryHtmlElement('.ag-pinned-right-cols-container');
+                    this.ePinnedRightColsViewport = this.queryHtmlElement('.ag-pinned-right-cols-viewport');
                     this.ePinnedHeader = this.queryHtmlElement('.ag-pinned-header');
+                    this.ePinnedRightHeader = this.queryHtmlElement('.ag-pinned-right-header');
                     this.eHeader = this.queryHtmlElement('.ag-header');
                     this.eHeaderContainer = this.queryHtmlElement('.ag-header-container');
                     this.eFloatingTop = this.queryHtmlElement('.ag-floating-top');
                     this.ePinnedFloatingTop = this.queryHtmlElement('.ag-pinned-floating-top');
+                    this.ePinnedRightFloatingTop = this.queryHtmlElement('.ag-pinned-floating-top');
                     this.eFloatingTopContainer = this.queryHtmlElement('.ag-floating-top-container');
                     this.eFloatingBottom = this.queryHtmlElement('.ag-floating-bottom');
                     this.ePinnedFloatingBottom = this.queryHtmlElement('.ag-pinned-floating-bottom');
+                    this.ePinnedRightFloatingBottom = this.queryHtmlElement('.ag-pinned-right-floating-bottom');
                     this.eFloatingBottomContainer = this.queryHtmlElement('.ag-floating-bottom-container');
                     // for scrolls, all rows live in eBody (containing pinned and normal body)
                     this.eParentsOfRows = [this.eBody, this.eFloatingTop, this.eFloatingBottom];
                     // IE9, Chrome, Safari, Opera
                     this.ePinnedColsViewport.addEventListener('mousewheel', this.mouseWheelListener.bind(this));
+                    this.ePinnedRightColsViewport.addEventListener('mousewheel', this.mouseWheelListener.bind(this));
                     // Firefox
                     this.ePinnedColsViewport.addEventListener('DOMMouseScroll', this.mouseWheelListener.bind(this));
+                    this.ePinnedRightColsViewport.addEventListener('DOMMouseScroll', this.mouseWheelListener.bind(this));
                 }
             };
             GridPanel.prototype.mouseWheelListener = function (event) {
@@ -8306,7 +8461,13 @@ var ag;
                 this.ePinnedColsContainer.style.width = pinnedColWidth;
                 this.ePinnedFloatingBottom.style.width = pinnedColWidth;
                 this.ePinnedFloatingTop.style.width = pinnedColWidth;
+                var pinnedRightColWidth = this.columnModel.getPinnedRightContainerWidth() + 'px';
+                this.ePinnedRightColsContainer.style.width = pinnedRightColWidth;
+                this.ePinnedRightColsViewport.style.top = this.gridOptionsWrapper.getHeaderHeight() + 'px';
+                this.ePinnedRightFloatingBottom.style.width = pinnedRightColWidth;
+                this.ePinnedRightFloatingTop.style.width = pinnedRightColWidth;
                 this.eBodyViewportWrapper.style.marginLeft = pinnedColWidth;
+                this.eBodyViewportWrapper.style.marginRight = pinnedRightColWidth;
             };
             GridPanel.prototype.showPinnedColContainersIfNeeded = function () {
                 // no need to do this if not using scrolls
@@ -8314,6 +8475,7 @@ var ag;
                     return;
                 }
                 var showingPinnedCols = this.columnModel.isPinning();
+                var showingPinnedRightCols = this.columnModel.isPinningRight();
                 //some browsers had layout issues with the blank divs, so if blank,
                 //we don't display them
                 if (showingPinnedCols) {
@@ -8323,6 +8485,14 @@ var ag;
                 else {
                     this.ePinnedHeader.style.display = 'none';
                     this.ePinnedColsViewport.style.display = 'none';
+                }
+                if (showingPinnedRightCols) {
+                    this.ePinnedRightHeader.style.display = 'inline-block';
+                    this.ePinnedRightColsViewport.style.display = 'inline';
+                }
+                else {
+                    this.ePinnedRightHeader.style.display = 'none';
+                    this.ePinnedRightColsViewport.style.display = 'none';
                 }
             };
             GridPanel.prototype.onBodyHeightChange = function () {
@@ -8444,6 +8614,7 @@ var ag;
             GridPanel.prototype.scrollPinned = function (bodyTopPosition) {
                 // this.ePinnedColsContainer.style.transform = 'translate3d(0,' + -bodyTopPosition + 'px,0)';
                 this.ePinnedColsContainer.style.top = -bodyTopPosition + 'px';
+                this.ePinnedRightColsContainer.style.top = -bodyTopPosition + 'px';
             };
             return GridPanel;
         })();
@@ -10242,8 +10413,8 @@ var ag;
                 if (changes.pinnedColumnCount) {
                     component.columnApi.setPinnedColumnCount(component.pinnedColumnCount);
                 }
-                if (changes.pinnedColumnCount) {
-                    component.columnApi.setPinnedColumnCount(component.pinnedColumnCount);
+                if (changes.pinnedRightColumnCount) {
+                    component.columnApi.setPinnedRightColumnCount(component.pinnedRightColumnCount);
                 }
                 if (changes.groupHeaders) {
                     component.api.setGroupHeaders(component.groupHeaders);
@@ -10307,7 +10478,7 @@ var ag;
                 'suppressMenuHide', 'rowDeselection', 'unSortIcon', 'suppressMultiSort', 'suppressScrollLag',
                 'singleClickEdit', 'suppressLoadingOverlay', 'suppressNoRowsOverlay'
             ];
-            ComponentUtil.WITH_IMPACT_NUMBER_PROPERTIES = ['pinnedColumnCount', 'headerHeight'];
+            ComponentUtil.WITH_IMPACT_NUMBER_PROPERTIES = ['pinnedColumnCount', 'pinnedRightColumnCount', 'headerHeight'];
             ComponentUtil.WITH_IMPACT_BOOLEAN_PROPERTIES = ['groupHeaders', 'showToolPanel'];
             ComponentUtil.WITH_IMPACT_OTHER_PROPERTIES = [
                 'rowData', 'floatingTopRowData', 'floatingBottomRowData', 'groupKeys',
@@ -10371,6 +10542,7 @@ var ag;
                 this.columnGroupOpened = new _ng.EventEmitter();
                 this.columnResized = new _ng.EventEmitter();
                 this.columnPinnedCountChanged = new _ng.EventEmitter();
+                this.columnPinnedRightCountChanged = new _ng.EventEmitter();
             }
             // this gets called after the directive is initialised
             AgGridNg2.prototype.onInit = function () {
@@ -10402,6 +10574,9 @@ var ag;
                         break;
                     case grid.Events.EVENT_COLUMN_PINNED_COUNT_CHANGED:
                         emitter = this.columnPinnedCountChanged;
+                        break;
+                    case grid.Events.EVENT_COLUMN_PINNED_RIGHT_COUNT_CHANGED:
+                        emitter = this.columnPinnedRightCountChanged;
                         break;
                     case grid.Events.EVENT_COLUMN_PIVOT_CHANGE:
                         emitter = this.columnPivotChanged;
@@ -10496,7 +10671,7 @@ var ag;
                         'rowClicked', 'rowDoubleClicked', 'ready',
                         // column events
                         'columnEverythingChanged', 'columnPivotChanged', 'columnValueChanged', 'columnMoved',
-                        'columnVisible', 'columnGroupOpened', 'columnResized', 'columnPinnedCountChanged'],
+                        'columnVisible', 'columnGroupOpened', 'columnResized', 'columnPinnedCountChanged', 'columnPinnedRightCountChanged'],
                     inputs: ['gridOptions']
                         .concat(grid.ComponentUtil.SIMPLE_PROPERTIES)
                         .concat(grid.ComponentUtil.SIMPLE_BOOLEAN_PROPERTIES)
