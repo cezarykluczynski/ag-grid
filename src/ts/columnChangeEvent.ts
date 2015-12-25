@@ -5,16 +5,19 @@ module ag.grid {
     export class ColumnChangeEvent {
 
         private type: string;
+        private defaultPrevented: boolean;
         private column: Column;
         private columnGroup: ColumnGroup;
         private fromIndex: number;
         private toIndex: number;
+        private newWidth: number;
         private pinnedColumnCount: number;
         private pinnedRightColumnCount: number;
         private finished: boolean;
 
         constructor(type: string) {
             this.type = type;
+            this.defaultPrevented = false;
         }
 
         public toString(): string {
@@ -23,11 +26,21 @@ module ag.grid {
             if (this.columnGroup) { result += ', columnGroup: ' + this.columnGroup.name; }
             if (this.fromIndex) { result += ', fromIndex: ' + this.fromIndex; }
             if (this.toIndex) { result += ', toIndex: ' + this.toIndex; }
+            if (this.newWidth) { result += ', newWidth: ' + this.newWidth; }
             if (this.pinnedColumnCount) { result += ', pinnedColumnCount: ' + this.pinnedColumnCount; }
             if (this.pinnedRightColumnCount) { result += ', pinnedRightColumnCount: ' + this.pinnedRightColumnCount; }
             if (typeof this.finished == 'boolean') { result += ', finished: ' + this.finished; }
             result += '}';
             return result;
+        }
+
+        public preventDefault(): ColumnChangeEvent {
+            this.defaultPrevented = true;
+            return this;
+        }
+
+        public isDefaultPrevented(): boolean {
+            return this.defaultPrevented;
         }
 
         public withColumn(column: Column): ColumnChangeEvent {
@@ -47,6 +60,11 @@ module ag.grid {
 
         public withFromIndex(fromIndex: number): ColumnChangeEvent {
             this.fromIndex = fromIndex;
+            return this;
+        }
+
+        public withNewWidth(newWidth: number): ColumnChangeEvent {
+            this.newWidth = newWidth;
             return this;
         }
 

@@ -51,6 +51,7 @@ module ag.grid {
         public columnMoved = new _ng.EventEmitter();
         public columnVisible = new _ng.EventEmitter();
         public columnGroupOpened = new _ng.EventEmitter();
+        public columnBeforeResize = new _ng.EventEmitter();
         public columnResized = new _ng.EventEmitter();
         public columnPinnedCountChanged = new _ng.EventEmitter();
         public columnPinnedRightCountChanged = new _ng.EventEmitter();
@@ -153,6 +154,7 @@ module ag.grid {
                 case Events.EVENT_COLUMN_PINNED_COUNT_CHANGED: emitter = this.columnPinnedCountChanged; break;
                 case Events.EVENT_COLUMN_PINNED_RIGHT_COUNT_CHANGED: emitter = this.columnPinnedRightCountChanged; break;
                 case Events.EVENT_COLUMN_PIVOT_CHANGE: emitter = this.columnPivotChanged; break;
+                case Events.EVENT_COLUMN_BEFORE_RESIZE: emitter = this.columnBeforeResize; break;
                 case Events.EVENT_COLUMN_RESIZED: emitter = this.columnResized; break;
                 case Events.EVENT_COLUMN_VALUE_CHANGE: emitter = this.columnValueChanged; break;
                 case Events.EVENT_COLUMN_VISIBLE: emitter = this.columnVisible; break;
@@ -209,7 +211,8 @@ module ag.grid {
                     'rowClicked', 'rowDoubleClicked', 'ready',
                     // column events
                     'columnEverythingChanged','columnPivotChanged','columnValueChanged','columnMoved',
-                    'columnVisible','columnGroupOpened','columnResized','columnPinnedCountChanged', 'columnPinnedRightCountChanged'],
+                    'columnVisible', 'columnGroupOpened', 'columnBeforeResize', 'columnResized',
+                    'columnPinnedCountChanged', 'columnPinnedRightCountChanged'],
                 inputs: ['gridOptions']
                     .concat(ComponentUtil.SIMPLE_PROPERTIES)
                     .concat(ComponentUtil.SIMPLE_BOOLEAN_PROPERTIES)
