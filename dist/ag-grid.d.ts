@@ -5,23 +5,31 @@
 declare module ag.grid {
     class ColumnChangeEvent {
         private type;
+        private defaultPrevented;
         private column;
         private columnGroup;
         private fromIndex;
         private toIndex;
+        private newWidth;
         private pinnedColumnCount;
+        private pinnedRightColumnCount;
         private finished;
         constructor(type: string);
         toString(): string;
+        preventDefault(): ColumnChangeEvent;
+        isDefaultPrevented(): boolean;
         withColumn(column: Column): ColumnChangeEvent;
         withFinished(finished: boolean): ColumnChangeEvent;
         withColumnGroup(columnGroup: ColumnGroup): ColumnChangeEvent;
         withFromIndex(fromIndex: number): ColumnChangeEvent;
+        withNewWidth(newWidth: number): ColumnChangeEvent;
         withPinnedColumnCount(pinnedColumnCount: number): ColumnChangeEvent;
+        withPinnedRightColumnCount(pinnedRightColumnCount: number): ColumnChangeEvent;
         withToIndex(toIndex: number): ColumnChangeEvent;
         getFromIndex(): number;
         getToIndex(): number;
         getPinnedColumnCount(): number;
+        getPinnedRightColumnCount(): number;
         getType(): string;
         getColumn(): Column;
         getColumnGroup(): ColumnGroup;
@@ -120,6 +128,8 @@ declare module ag.grid {
         visible: any;
         colId: any;
         pinned: boolean;
+        pinnedLeft: boolean;
+        pinnedRight: boolean;
         index: number;
         aggFunc: string;
         pivotIndex: number;
@@ -134,13 +144,15 @@ declare module ag.grid {
 declare module ag.grid {
     class ColumnGroup {
         pinned: any;
+        pinnedLeft: any;
+        pinnedRight: any;
         name: any;
         allColumns: Column[];
         displayedColumns: Column[];
         expandable: boolean;
         expanded: boolean;
         actualWidth: number;
-        constructor(pinned: any, name: any);
+        constructor(pinned: any, pinnedLeft: any, pinnedRight: any, name: any);
         getMinimumWidth(): number;
         addColumn(column: any): void;
         calculateExpandable(): void;
@@ -214,7 +226,7 @@ declare module ag.grid {
         getIsScrollLag(): () => boolean;
         getSortingOrder(): string[];
         getSlaveGrids(): GridOptions[];
-        getGroupRowRenderer(): Object | Function;
+        getGroupRowRenderer(): Function | Object;
         getRowHeight(): number;
         getOverlayLoadingTemplate(): string;
         getOverlayNoRowsTemplate(): string;
@@ -233,6 +245,7 @@ declare module ag.grid {
         getRowBuffer(): number;
         private checkForDeprecated();
         getPinnedColCount(): number;
+        getPinnedRightColCount(): number;
         getLocaleTextFunc(): Function;
         globalEventHandler(eventName: string, event?: any): void;
         private getCallbackForEvent(eventName);
@@ -265,10 +278,12 @@ declare module ag.grid {
         static EVENT_COLUMN_VISIBLE: string;
         /** A column group was opened / closed */
         static EVENT_COLUMN_GROUP_OPENED: string;
+        static EVENT_COLUMN_BEFORE_RESIZE: string;
         /** One or more columns was resized. If just one, the column in the event is set. */
         static EVENT_COLUMN_RESIZED: string;
         /** One or more columns was resized. If just one, the column in the event is set. */
         static EVENT_COLUMN_PINNED_COUNT_CHANGED: string;
+        static EVENT_COLUMN_PINNED_RIGHT_COUNT_CHANGED: string;
         static EVENT_MODEL_UPDATED: string;
         static EVENT_CELL_CLICKED: string;
         static EVENT_CELL_DOUBLE_CLICKED: string;
@@ -333,6 +348,7 @@ declare module ag.grid {
         setState(columnState: any): void;
         getState(): [any];
         isPinning(): boolean;
+        isPinningRight(): boolean;
         getVisibleColAfter(col: Column): Column;
         getVisibleColBefore(col: Column): Column;
         setColumnVisible(column: Column, visible: boolean): void;
@@ -348,6 +364,7 @@ declare module ag.grid {
         addValueColumn(column: Column): void;
         removePivotColumn(column: Column): void;
         setPinnedColumnCount(count: number): void;
+        setPinnedRightColumnCount(count: number): void;
         addPivotColumn(column: Column): void;
         getHeaderGroups(): ColumnGroup[];
         hideColumn(colId: any, hide: any): void;
@@ -367,6 +384,7 @@ declare module ag.grid {
         private setupComplete;
         private valueService;
         private pinnedColumnCount;
+        private pinnedRightColumnCount;
         private eventService;
         constructor();
         init(angularGrid: Grid, selectionRendererFactory: SelectionRendererFactory, gridOptionsWrapper: GridOptionsWrapper, expressionService: ExpressionService, valueService: ValueService, masterSlaveController: MasterSlaveService, eventService: EventService): void;
@@ -374,8 +392,10 @@ declare module ag.grid {
         isSetupComplete(): boolean;
         getHeaderGroups(): ColumnGroup[];
         getPinnedContainerWidth(): number;
+        getPinnedRightContainerWidth(): number;
         addPivotColumn(column: Column): void;
         setPinnedColumnCount(count: number): void;
+        setPinnedRightColumnCount(count: number): void;
         removePivotColumn(column: Column): void;
         addValueColumn(column: Column): void;
         removeValueColumn(column: Column): void;
@@ -394,6 +414,7 @@ declare module ag.grid {
         getVisibleColBefore(col: any): Column;
         getVisibleColAfter(col: Column): Column;
         isPinning(): boolean;
+        isPinningRight(): boolean;
         getState(): [any];
         setState(columnState: any): void;
         getColumns(keys: any[]): Column[];
@@ -943,6 +964,7 @@ declare module ag.grid {
 declare module ag.grid {
     class RenderedRow {
         vPinnedRow: any;
+        vPinnedRightRow: any;
         vBodyRow: any;
         private renderedCells;
         private scope;
@@ -960,13 +982,15 @@ declare module ag.grid {
         private templateService;
         private selectionController;
         private pinning;
+        private pinningRight;
         private eBodyContainer;
         private ePinnedContainer;
+        private ePinnedRightContainer;
         private valueService;
         private eventService;
         constructor(gridOptionsWrapper: GridOptionsWrapper, valueService: ValueService, parentScope: any, angularGrid: Grid, columnController: ColumnController, expressionService: ExpressionService, cellRendererMap: {
             [key: string]: any;
-        }, selectionRendererFactory: SelectionRendererFactory, $compile: any, templateService: TemplateService, selectionController: SelectionController, rowRenderer: RowRenderer, eBodyContainer: HTMLElement, ePinnedContainer: HTMLElement, node: any, rowIndex: number, eventService: EventService);
+        }, selectionRendererFactory: SelectionRendererFactory, $compile: any, templateService: TemplateService, selectionController: SelectionController, rowRenderer: RowRenderer, eBodyContainer: HTMLElement, ePinnedContainer: HTMLElement, ePinnedRightContainer: HTMLElement, node: any, rowIndex: number, eventService: EventService);
         onRowSelected(selected: boolean): void;
         softRefresh(): void;
         getRenderedCellForColumn(column: Column): RenderedCell;
@@ -1038,10 +1062,13 @@ declare module ag.grid {
         private eBodyContainer;
         private eBodyViewport;
         private ePinnedColsContainer;
+        private ePinnedRightColsContainer;
         private eFloatingTopContainer;
         private eFloatingTopPinnedContainer;
+        private eFloatingTopPinnedRightContainer;
         private eFloatingBottomContainer;
         private eFloatingBottomPinnedContainer;
+        private eFloatingBottomPinnedRightContainer;
         private eParentsOfRows;
         init(columnModel: any, gridOptionsWrapper: GridOptionsWrapper, gridPanel: GridPanel, angularGrid: Grid, selectionRendererFactory: SelectionRendererFactory, $compile: any, $scope: any, selectionController: SelectionController, expressionService: ExpressionService, templateService: TemplateService, valueService: ValueService, eventService: EventService): void;
         setRowModel(rowModel: any): void;
@@ -1049,7 +1076,7 @@ declare module ag.grid {
         setMainRowWidths(): void;
         private findAllElements(gridPanel);
         refreshAllFloatingRows(): void;
-        private refreshFloatingRows(renderedRows, rowData, pinnedContainer, bodyContainer, isTop);
+        private refreshFloatingRows(renderedRows, rowData, pinnedContainer, pinnedRightContainer, bodyContainer, isTop);
         refreshView(refreshFromIndex?: any): void;
         softRefreshView(): void;
         refreshRows(rowNodes: RowNode[]): void;
@@ -1205,13 +1232,16 @@ declare module ag.grid {
         private $scope;
         private $compile;
         private ePinnedHeader;
+        private ePinnedRightHeader;
         private eHeaderContainer;
         private eRoot;
         private headerElements;
         init(gridOptionsWrapper: GridOptionsWrapper, columnController: ColumnController, gridPanel: GridPanel, angularGrid: Grid, filterManager: FilterManager, $scope: any, $compile: any): void;
         private findAllElements(gridPanel);
         refreshHeader(): void;
+        private getColumnGroupContainer(columnGroup);
         private insertHeadersWithGrouping();
+        private getColumnContainer(column);
         private insertHeadersWithoutGrouping();
         updateSortIcons(): void;
         updateFilterIcons(): void;
@@ -1399,6 +1429,7 @@ declare module ag.grid {
         private layoutHeightFullHeight();
         private layoutHeightNormal();
         getCentreHeight(): number;
+        getCenterWidth(): number;
         private layoutWidth();
         setEastVisible(visible: any): void;
         private setupOverlays();
@@ -1423,17 +1454,22 @@ declare module ag.grid {
         private eBody;
         private eBodyContainer;
         private ePinnedColsContainer;
+        private ePinnedRightColsContainer;
         private eHeaderContainer;
         private ePinnedHeader;
+        private ePinnedRightHeader;
         private eHeader;
         private eParentsOfRows;
         private eBodyViewportWrapper;
         private ePinnedColsViewport;
+        private ePinnedRightColsViewport;
         private eFloatingTop;
         private ePinnedFloatingTop;
+        private ePinnedRightFloatingTop;
         private eFloatingTopContainer;
         private eFloatingBottom;
         private ePinnedFloatingBottom;
+        private ePinnedRightFloatingBottom;
         private eFloatingBottomContainer;
         init(gridOptionsWrapper: GridOptionsWrapper, columnModel: ColumnController, rowRenderer: RowRenderer, masterSlaveService: MasterSlaveService): void;
         getLayout(): BorderLayout;
@@ -1441,6 +1477,7 @@ declare module ag.grid {
         getPinnedFloatingTop(): HTMLElement;
         getFloatingTopContainer(): HTMLElement;
         getPinnedFloatingBottom(): HTMLElement;
+        getPinnedRightFloatingBottom(): HTMLElement;
         getFloatingBottomContainer(): HTMLElement;
         private createOverlayTemplate(name, defaultTemplate, userProvidedTemplate);
         private createLoadingOverlayTemplate();
@@ -1455,9 +1492,11 @@ declare module ag.grid {
         getBodyContainer(): HTMLElement;
         getBodyViewport(): HTMLElement;
         getPinnedColsContainer(): HTMLElement;
+        getPinnedRightColsContainer(): HTMLElement;
         getHeaderContainer(): HTMLElement;
         getRoot(): HTMLElement;
         getPinnedHeader(): HTMLElement;
+        getPinnedRightHeader(): HTMLElement;
         getRowsParent(): HTMLElement[];
         private queryHtmlElement(selector);
         private findElements();
@@ -1695,6 +1734,7 @@ declare module ag.grid {
         columnDefs?: any[];
         datasource?: any;
         pinnedColumnCount?: number;
+        pinnedRightColumnCount?: number;
         groupHeaders?: boolean;
         headerHeight?: number;
         groupRowInnerRenderer?(params: any): void;
@@ -1960,8 +2000,10 @@ declare module ag.grid {
         columnMoved: any;
         columnVisible: any;
         columnGroupOpened: any;
+        columnBeforeResize: any;
         columnResized: any;
         columnPinnedCountChanged: any;
+        columnPinnedRightCountChanged: any;
         virtualPaging: boolean;
         toolPanelSuppressPivot: boolean;
         toolPanelSuppressValues: boolean;
@@ -2016,6 +2058,7 @@ declare module ag.grid {
         columnDefs: any[];
         datasource: any;
         pinnedColumnCount: number;
+        pinnedRightColumnCount: number;
         quickFilterText: string;
         groupHeaders: boolean;
         headerHeight: number;
