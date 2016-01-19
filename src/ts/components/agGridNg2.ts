@@ -49,6 +49,7 @@ module ag.grid {
         public columnVisible = new _ng.core.EventEmitter();
         public columnGroupOpened = new _ng.core.EventEmitter();
         public columnResized = new _ng.core.EventEmitter();
+        public columnBeforeResize = new _ng.EventEmitter();
         public columnPinnedCountChanged = new _ng.core.EventEmitter();
 
         // properties
@@ -145,6 +146,7 @@ module ag.grid {
                 case Events.EVENT_COLUMN_MOVED: emitter = this.columnMoved; break;
                 case Events.EVENT_COLUMN_ROW_GROUP_CHANGE: emitter = this.columnRowGroupChanged; break;
                 case Events.EVENT_COLUMN_RESIZED: emitter = this.columnResized; break;
+                case Events.EVENT_COLUMN_BEFORE_RESIZE: emitter = this.columnBeforeResize; break;
                 case Events.EVENT_COLUMN_VALUE_CHANGE: emitter = this.columnValueChanged; break;
                 case Events.EVENT_COLUMN_VISIBLE: emitter = this.columnVisible; break;
                 case Events.EVENT_MODEL_UPDATED: emitter = this.modelUpdated; break;
@@ -203,7 +205,7 @@ module ag.grid {
                     'rowClicked', 'rowDoubleClicked', 'ready', 'gridSizeChanged',
                     // column events
                     'columnEverythingChanged','columnRowGroupChanged','columnValueChanged','columnMoved',
-                    'columnVisible','columnGroupOpened','columnResized','columnPinnedCountChanged'],
+                    'columnVisible', 'columnGroupOpened', 'columnBeforeResize', 'columnResized', 'columnPinnedCountChanged'],
                 inputs: ['gridOptions']
                     .concat(ComponentUtil.SIMPLE_PROPERTIES)
                     .concat(ComponentUtil.SIMPLE_BOOLEAN_PROPERTIES)
