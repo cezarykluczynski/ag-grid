@@ -10,9 +10,11 @@ module ag.grid {
         // se if event impacts multiple columns
         private columns: Column[];
         private columnGroup: ColumnGroup;
+        private defaultPrevented: boolean;
         private fromIndex: number;
         private toIndex: number;
         private finished: boolean;
+        private newWidth: number;
         private visible: boolean;
         private pinned: string;
 
@@ -28,9 +30,19 @@ module ag.grid {
             if (this.toIndex) { result += ', toIndex: ' + this.toIndex; }
             if (this.visible) { result += ', visible: ' + this.visible; }
             if (this.pinned) { result += ', visible: ' + this.visible; }
+            if (this.newWidth) { result += ', newWidth: ' + this.newWidth; }
             if (typeof this.finished == 'boolean') { result += ', finished: ' + this.finished; }
             result += '}';
             return result;
+        }
+
+        public preventDefault(): ColumnChangeEvent {
+            this.defaultPrevented = true;
+            return this;
+        }
+
+        public isDefaultPrevented(): boolean {
+            return this.defaultPrevented;
         }
 
         public withPinned(pinned: string): ColumnChangeEvent {
@@ -78,6 +90,11 @@ module ag.grid {
 
         public withToIndex(toIndex: number): ColumnChangeEvent {
             this.toIndex = toIndex;
+            return this;
+        }
+
+        public withNewWidth(newWidth: number): ColumnChangeEvent {
+            this.newWidth = newWidth;
             return this;
         }
 
