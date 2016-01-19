@@ -308,6 +308,13 @@ module ag.grid {
                 return;
             }
 
+            var event = new ColumnChangeEvent(Events.EVENT_COLUMN_BEFORE_RESIZE).withColumn(column).withNewWidth(newWidth).withFinished(finished);
+                this.eventService.dispatchEvent(Events.EVENT_COLUMN_BEFORE_RESIZE, event);
+
+            if (event.isDefaultPrevented()) {
+                return;
+            }
+
             newWidth = this.normaliseColumnWidth(column, newWidth);
 
             // check for change first, to avoid unnecessary firing of events
@@ -318,7 +325,7 @@ module ag.grid {
             if (finished || column.getActualWidth() !== newWidth) {
                 column.setActualWidth(newWidth);
 
-                var event = new ColumnChangeEvent(Events.EVENT_COLUMN_RESIZED).withColumn(column).withFinished(finished);
+                event = new ColumnChangeEvent(Events.EVENT_COLUMN_RESIZED).withColumn(column).withFinished(finished);
                 this.eventService.dispatchEvent(Events.EVENT_COLUMN_RESIZED, event);
             }
         }
