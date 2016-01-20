@@ -8,13 +8,17 @@ declare module ag.grid {
         private column;
         private columns;
         private columnGroup;
+        private defaultPrevented;
         private fromIndex;
         private toIndex;
         private finished;
+        private newWidth;
         private visible;
         private pinned;
         constructor(type: string);
         toString(): string;
+        preventDefault(): ColumnChangeEvent;
+        isDefaultPrevented(): boolean;
         withPinned(pinned: string): ColumnChangeEvent;
         withVisible(visible: boolean): ColumnChangeEvent;
         isVisible(): boolean;
@@ -25,6 +29,7 @@ declare module ag.grid {
         withColumnGroup(columnGroup: ColumnGroup): ColumnChangeEvent;
         withFromIndex(fromIndex: number): ColumnChangeEvent;
         withToIndex(toIndex: number): ColumnChangeEvent;
+        withNewWidth(newWidth: number): ColumnChangeEvent;
         getFromIndex(): number;
         getToIndex(): number;
         getType(): string;
@@ -65,6 +70,7 @@ declare module ag.grid {
         fileName?: string;
         customHeader?: string;
         customFooter?: string;
+        allColumns?: boolean;
     }
     class CsvCreator {
         private rowController;
@@ -96,6 +102,7 @@ declare module ag.grid {
         static EVENT_COLUMN_GROUP_OPENED: string;
         /** One or more columns was resized. If just one, the column in the event is set. */
         static EVENT_COLUMN_RESIZED: string;
+        static EVENT_COLUMN_BEFORE_RESIZE: string;
         static EVENT_MODEL_UPDATED: string;
         static EVENT_CELL_CLICKED: string;
         static EVENT_CELL_DOUBLE_CLICKED: string;
@@ -114,6 +121,7 @@ declare module ag.grid {
         static EVENT_ROW_CLICKED: string;
         static EVENT_ROW_DOUBLE_CLICKED: string;
         static EVENT_READY: string;
+        static EVENT_GRID_SIZE_CHANGED: string;
     }
 }
 declare module ag.grid {
@@ -263,6 +271,8 @@ declare module ag.grid {
         getOverlayLoadingTemplate(): string;
         getOverlayNoRowsTemplate(): string;
         getCheckboxSelection(): Function;
+        isSuppressAutoSize(): boolean;
+        isSuppressParentsInRowNodes(): boolean;
         getHeaderHeight(): number;
         setHeaderHeight(headerHeight: number): void;
         getFloatingTopRowData(): any[];
@@ -422,6 +432,8 @@ declare module ag.grid {
         suppressSizeToFit?: boolean;
         /** Set to true if you do not want this column to be resizable by dragging it's edge. */
         suppressResize?: boolean;
+        /** Set to true if you do not want this column to be auto-resizable by double clicking it's edge. */
+        suppressAutoSize?: boolean;
         /** Set to true if this col is editable, otherwise false. Can also be a function to have different rows editable. */
         editable?: boolean | (Function);
         /** Callbacks for editing.See editing section for further details. */
@@ -816,6 +828,14 @@ declare module ag.grid {
     }
 }
 declare module ag.grid {
+    class AutoWidthCalculator {
+        private rowRenderer;
+        private gridPanel;
+        init(rowRenderer: RowRenderer, gridPanel: GridPanel): void;
+        getPreferredWidthForColumn(column: Column): number;
+    }
+}
+declare module ag.grid {
     class ColumnApi {
         private _columnController;
         constructor(_columnController: ColumnController);
@@ -850,6 +870,8 @@ declare module ag.grid {
         addRowGroupColumn(column: Column): void;
         getLeftHeaderGroups(): ColumnGroupChild[];
         getCenterHeaderGroups(): ColumnGroupChild[];
+        autoSizeColumn(key: Column | ColDef | String): void;
+        autoSizeColumns(keys: (Column | ColDef | String)[]): void;
         columnGroupOpened(group: ColumnGroup | string, newValue: boolean): void;
         hideColumns(colIds: any, hide: any): void;
         hideColumn(colId: any, hide: any): void;
@@ -862,6 +884,7 @@ declare module ag.grid {
         private masterSlaveController;
         private balancedColumnTreeBuilder;
         private displayedGroupCreator;
+        private autoWidthCalculator;
         private originalBalancedTree;
         private allColumns;
         private displayedLeftColumnTree;
@@ -880,7 +903,9 @@ declare module ag.grid {
         private columnUtils;
         private logger;
         constructor();
-        init(angularGrid: Grid, selectionRendererFactory: SelectionRendererFactory, gridOptionsWrapper: GridOptionsWrapper, expressionService: ExpressionService, valueService: ValueService, masterSlaveController: MasterSlaveService, eventService: EventService, balancedColumnTreeBuilder: BalancedColumnTreeBuilder, displayedGroupCreator: DisplayedGroupCreator, columnUtils: ColumnUtils, loggerFactory: LoggerFactory): void;
+        init(angularGrid: Grid, selectionRendererFactory: SelectionRendererFactory, gridOptionsWrapper: GridOptionsWrapper, expressionService: ExpressionService, valueService: ValueService, masterSlaveController: MasterSlaveService, eventService: EventService, balancedColumnTreeBuilder: BalancedColumnTreeBuilder, displayedGroupCreator: DisplayedGroupCreator, columnUtils: ColumnUtils, autoWidthCalculator: AutoWidthCalculator, loggerFactory: LoggerFactory): void;
+        autoSizeColumns(keys: (Column | ColDef | String)[]): void;
+        autoSizeColumn(key: Column | String | ColDef): void;
         private getColumnsFromTree(rootColumns);
         private getAllColumnGroups();
         getColumnApi(): ColumnApi;
@@ -898,6 +923,7 @@ declare module ag.grid {
         removeValueColumn(column: Column): void;
         private doesColumnExistInGrid(column);
         getFirstRightPinnedColIndex(): number;
+        private normaliseColumnWidth(column, newWidth);
         setColumnWidth(column: Column, newWidth: number, finished: boolean): void;
         setColumnAggFunction(column: Column, aggFunc: string): void;
         moveRowGroupColumn(fromIndex: number, toIndex: number): void;
@@ -1104,7 +1130,7 @@ declare module ag.grid {
         onRowSelected(selected: boolean): void;
         softRefresh(): void;
         getRenderedCellForColumn(column: Column): RenderedCell;
-        getCellForCol(column: Column): any;
+        getCellForCol(column: Column): HTMLElement;
         destroy(): void;
         private destroyScope();
         isDataInList(rows: any[]): boolean;
@@ -1183,6 +1209,7 @@ declare module ag.grid {
         private eParentsOfRows;
         init(columnModel: any, gridOptionsWrapper: GridOptionsWrapper, gridPanel: GridPanel, angularGrid: Grid, selectionRendererFactory: SelectionRendererFactory, $compile: any, $scope: any, selectionController: SelectionController, expressionService: ExpressionService, templateService: TemplateService, valueService: ValueService, eventService: EventService): void;
         setRowModel(rowModel: any): void;
+        getAllCellsForColumn(column: Column): HTMLElement[];
         onIndividualColumnResized(column: Column): void;
         setMainRowWidths(): void;
         private findAllElements(gridPanel);
@@ -1356,7 +1383,8 @@ declare module ag.grid {
 declare module ag.grid {
     class GroupCreator {
         private valueService;
-        init(valueService: ValueService): void;
+        private gridOptionsWrapper;
+        init(valueService: ValueService, gridOptionsWrapper: GridOptionsWrapper): void;
         group(rowNodes: RowNode[], groupedCols: Column[], expandByDefault: any): RowNode[];
         isExpanded(expandByDefault: any, level: any): boolean;
     }
@@ -1482,21 +1510,22 @@ declare module ag.grid {
         init(angularGrid: any, gridOptionsWrapper: any): void;
         setDatasource(datasource: any): void;
         reset(): void;
-        setTotalLabels(): void;
-        calculateTotalPages(): void;
-        pageLoaded(rows: any, lastRowIndex: any): void;
-        updateRowLabels(): void;
-        loadPage(): void;
-        isCallDaemon(versionCopy: any): boolean;
-        onBtNext(): void;
-        onBtPrevious(): void;
-        onBtFirst(): void;
-        onBtLast(): void;
-        isZeroPagesToDisplay(): boolean;
-        enableOrDisableButtons(): void;
-        createTemplate(): string;
+        private myToLocaleString(input);
+        private setTotalLabels();
+        private calculateTotalPages();
+        private pageLoaded(rows, lastRowIndex);
+        private updateRowLabels();
+        private loadPage();
+        private isCallDaemon(versionCopy);
+        private onBtNext();
+        private onBtPrevious();
+        private onBtFirst();
+        private onBtLast();
+        private isZeroPagesToDisplay();
+        private enableOrDisableButtons();
+        private createTemplate();
         getGui(): any;
-        setupComponents(): void;
+        private setupComponents();
     }
 }
 declare module ag.grid {
@@ -1821,6 +1850,8 @@ declare module ag.grid {
         angularCompileHeaders?: boolean;
         suppressLoadingOverlay?: boolean;
         suppressNoRowsOverlay?: boolean;
+        suppressAutoSize?: boolean;
+        suppressParentsInRowNodes?: boolean;
         localeText?: any;
         localeTextFunc?: Function;
         suppressScrollLag?: boolean;
@@ -1878,6 +1909,7 @@ declare module ag.grid {
         onVirtualRowRemoved?(params: any): void;
         onRowClicked?(params: any): void;
         onRowDoubleClicked?(params: any): void;
+        onGridSizeChanged?(params: any): void;
         api?: GridApi;
         columnApi?: ColumnApi;
     }
@@ -1931,7 +1963,7 @@ declare module ag.grid {
         selectIndex(index: any, tryMulti: any, suppressEvents: any): void;
         deselectIndex(index: number, suppressEvents?: boolean): void;
         selectNode(node: any, tryMulti?: boolean, suppressEvents?: boolean): void;
-        deselectNode(node: any): void;
+        deselectNode(node: any, suppressEvents?: boolean): void;
         selectAll(): void;
         deselectAll(): void;
         recomputeAggregates(): void;
@@ -1986,6 +2018,7 @@ declare module ag.grid {
         private columnController;
         init(gridOptionsWrapper: GridOptionsWrapper, expressionService: ExpressionService, columnController: ColumnController): void;
         getValue(colDef: ColDef, data: any, node: any): any;
+        private getValueUsingField(data, field);
         private executeValueGetter(valueGetter, data, colDef, node);
         private getValueCallback(data, node, field);
     }
@@ -2110,6 +2143,7 @@ declare module ag.grid {
         rowClicked: any;
         rowDoubleClicked: any;
         ready: any;
+        gridSizeChanged: any;
         columnEverythingChanged: any;
         columnRowGroupChanged: any;
         columnValueChanged: any;
@@ -2117,6 +2151,7 @@ declare module ag.grid {
         columnVisible: any;
         columnGroupOpened: any;
         columnResized: any;
+        columnBeforeResize: any;
         columnPinnedCountChanged: any;
         virtualPaging: boolean;
         toolPanelSuppressGroups: boolean;
@@ -2196,4 +2231,6 @@ declare module ag.grid {
         }): void;
         onNewRowsLoaded?(): void;
     }
+}
+declare module ag.grid {
 }

@@ -33,11 +33,21 @@ var ag;
                 if (this.pinned) {
                     result += ', visible: ' + this.visible;
                 }
+                if (this.newWidth) {
+                    result += ', newWidth: ' + this.newWidth;
+                }
                 if (typeof this.finished == 'boolean') {
                     result += ', finished: ' + this.finished;
                 }
                 result += '}';
                 return result;
+            };
+            ColumnChangeEvent.prototype.preventDefault = function () {
+                this.defaultPrevented = true;
+                return this;
+            };
+            ColumnChangeEvent.prototype.isDefaultPrevented = function () {
+                return this.defaultPrevented;
             };
             ColumnChangeEvent.prototype.withPinned = function (pinned) {
                 this.pinned = pinned;
@@ -75,6 +85,10 @@ var ag;
             };
             ColumnChangeEvent.prototype.withToIndex = function (toIndex) {
                 this.toIndex = toIndex;
+                return this;
+            };
+            ColumnChangeEvent.prototype.withNewWidth = function (newWidth) {
+                this.newWidth = newWidth;
                 return this;
             };
             ColumnChangeEvent.prototype.getFromIndex = function () {
@@ -185,7 +199,14 @@ var ag;
                 var skipFooters = params && params.skipFooters;
                 var includeCustomHeader = params && params.customHeader;
                 var includeCustomFooter = params && params.customFooter;
-                var columnsToExport = this.columnController.getAllDisplayedColumns();
+                var allColumns = params && params.allColumns;
+                var columnsToExport;
+                if (allColumns) {
+                    columnsToExport = this.columnController.getAllColumns();
+                }
+                else {
+                    columnsToExport = this.columnController.getAllDisplayedColumns();
+                }
                 if (!columnsToExport || columnsToExport.length === 0) {
                     return '';
                 }
@@ -290,6 +311,7 @@ var ag;
             Events.EVENT_COLUMN_GROUP_OPENED = 'columnGroupOpened';
             /** One or more columns was resized. If just one, the column in the event is set. */
             Events.EVENT_COLUMN_RESIZED = 'columnResized';
+            Events.EVENT_COLUMN_BEFORE_RESIZE = 'columnBeforeResize';
             Events.EVENT_MODEL_UPDATED = 'modelUpdated';
             Events.EVENT_CELL_CLICKED = 'cellClicked';
             Events.EVENT_CELL_DOUBLE_CLICKED = 'cellDoubleClicked';
@@ -308,6 +330,7 @@ var ag;
             Events.EVENT_ROW_CLICKED = 'rowClicked';
             Events.EVENT_ROW_DOUBLE_CLICKED = 'rowDoubleClicked';
             Events.EVENT_READY = 'ready';
+            Events.EVENT_GRID_SIZE_CHANGED = 'gridSizeChanged';
             return Events;
         })();
         grid.Events = Events;
@@ -867,6 +890,8 @@ var ag;
             GridOptionsWrapper.prototype.getOverlayLoadingTemplate = function () { return this.gridOptions.overlayLoadingTemplate; };
             GridOptionsWrapper.prototype.getOverlayNoRowsTemplate = function () { return this.gridOptions.overlayNoRowsTemplate; };
             GridOptionsWrapper.prototype.getCheckboxSelection = function () { return this.gridOptions.checkboxSelection; };
+            GridOptionsWrapper.prototype.isSuppressAutoSize = function () { return isTrue(this.gridOptions.suppressAutoSize); };
+            GridOptionsWrapper.prototype.isSuppressParentsInRowNodes = function () { return isTrue(this.gridOptions.suppressParentsInRowNodes); };
             // properties
             GridOptionsWrapper.prototype.getHeaderHeight = function () {
                 if (typeof this.headerHeight === 'number') {
@@ -2667,12 +2692,7 @@ var ag;
                 }
             };
             Column.prototype.getMinimumWidth = function () {
-                if (this.colDef.minWidth > constants.MIN_COL_WIDTH) {
-                    return this.colDef.minWidth;
-                }
-                else {
-                    return constants.MIN_COL_WIDTH;
-                }
+                return Math.max(this.colDef.minWidth, constants.MIN_COL_WIDTH);
             };
             Column.prototype.setMinimum = function () {
                 this.actualWidth = this.getMinimumWidth();
@@ -3160,6 +3180,9 @@ var ag;
             BalancedColumnTreeBuilder.prototype.recursivelyCreateColumns = function (abstractColDefs, level, columnKeyCreator) {
                 var _this = this;
                 var result = [];
+                if (!abstractColDefs) {
+                    return result;
+                }
                 abstractColDefs.forEach(function (abstractColDef) {
                     _this.checkForDeprecatedItems(abstractColDef);
                     if (_this.isColumnGroup(abstractColDef)) {
@@ -3203,6 +3226,64 @@ var ag;
         grid.BalancedColumnTreeBuilder = BalancedColumnTreeBuilder;
     })(grid = ag.grid || (ag.grid = {}));
 })(ag || (ag = {}));
+var ag;
+(function (ag) {
+    var grid;
+    (function (grid) {
+        var AutoWidthCalculator = (function () {
+            function AutoWidthCalculator() {
+            }
+            AutoWidthCalculator.prototype.init = function (rowRenderer, gridPanel) {
+                this.gridPanel = gridPanel;
+                this.rowRenderer = rowRenderer;
+            };
+            // this is the trick: we create a dummy container and clone all the cells
+            // into the dummy, then check the dummy's width. then destroy the dummy
+            // as we don't need it any more.
+            // drawback: only the cells visible on the screen are considered
+            AutoWidthCalculator.prototype.getPreferredWidthForColumn = function (column) {
+                var eDummyContainer = document.createElement('span');
+                // position fixed, so it isn't restricted to the boundaries of the parent
+                eDummyContainer.style.position = 'fixed';
+                eDummyContainer.style.backgroundColor = 'red';
+                // we put the dummy into the body container, so it will inherit all the
+                // css styles that the real cells are inheriting
+                var eBodyContainer = this.gridPanel.getBodyContainer();
+                eBodyContainer.appendChild(eDummyContainer);
+                // get all the cells that are currently displayed (this only brings back
+                // rendered cells, rows not rendered due to row visualisation will not be here)
+                var eOriginalCells = this.rowRenderer.getAllCellsForColumn(column);
+                eOriginalCells.forEach(function (eCell, index) {
+                    // make a deep clone of the cell
+                    var eCellClone = eCell.cloneNode(true);
+                    // the original has a fixed width, we remove this to allow the natural width based on content
+                    eCellClone.style.width = '';
+                    // we put the cell into a containing div, as otherwise the cells would just line up
+                    // on the same line, standard flow layout, by putting them into divs, they are laid
+                    // out one per line
+                    var eCloneParent = document.createElement('div');
+                    // table-row, so that each cell is on a row. i also tried display='block', but this
+                    // didn't work in IE
+                    eCloneParent.style.display = 'table-row';
+                    // the twig on the branch, the branch on the tree, the tree in the hole,
+                    // the hole in the bog, the bog in the clone, the clone in the parent,
+                    // the parent in the dummy, and the dummy down in the vall-e-ooo, OOOOOOOOO! Oh row the rattling bog....
+                    eCloneParent.appendChild(eCellClone);
+                    eDummyContainer.appendChild(eCloneParent);
+                });
+                // at this point, all the clones are lined up vertically with natural widths. the dummy
+                // container will have a width wide enough just to fit the largest.
+                var dummyContainerWidth = eDummyContainer.offsetWidth;
+                // we are finished with the dummy container, so get rid of it
+                eBodyContainer.removeChild(eDummyContainer);
+                // we add 4 as I found without it, the gui still put '...' after some of the texts
+                return dummyContainerWidth + 4;
+            };
+            return AutoWidthCalculator;
+        })();
+        grid.AutoWidthCalculator = AutoWidthCalculator;
+    })(grid = ag.grid || (ag.grid = {}));
+})(ag || (ag = {}));
 /// <reference path="../utils.ts" />
 /// <reference path="../constants.ts" />
 /// <reference path="../entities/column.ts" />
@@ -3211,6 +3292,7 @@ var ag;
 /// <reference path="../masterSlaveService.ts" />
 /// <reference path="./displayedGroupCreator.ts" />
 /// <reference path="./balancedColumnTreeBuilder.ts" />
+/// <reference path="../rendering/autoWidthCalculator.ts" />
 var ag;
 (function (ag) {
     var grid;
@@ -3255,6 +3337,8 @@ var ag;
             ColumnApi.prototype.addRowGroupColumn = function (column) { this._columnController.addRowGroupColumn(column); };
             ColumnApi.prototype.getLeftHeaderGroups = function () { return this._columnController.getLeftHeaderGroups(); };
             ColumnApi.prototype.getCenterHeaderGroups = function () { return this._columnController.getCenterHeaderGroups(); };
+            ColumnApi.prototype.autoSizeColumn = function (key) { return this._columnController.autoSizeColumn(key); };
+            ColumnApi.prototype.autoSizeColumns = function (keys) { return this._columnController.autoSizeColumns(keys); };
             ColumnApi.prototype.columnGroupOpened = function (group, newValue) {
                 console.error('ag-Grid: columnGroupOpened no longer exists, use setColumnGroupOpened');
                 this.setColumnGroupOpened(group, newValue);
@@ -3275,7 +3359,7 @@ var ag;
                 this.headerRowCount = 0;
                 this.setupComplete = false;
             }
-            ColumnController.prototype.init = function (angularGrid, selectionRendererFactory, gridOptionsWrapper, expressionService, valueService, masterSlaveController, eventService, balancedColumnTreeBuilder, displayedGroupCreator, columnUtils, loggerFactory) {
+            ColumnController.prototype.init = function (angularGrid, selectionRendererFactory, gridOptionsWrapper, expressionService, valueService, masterSlaveController, eventService, balancedColumnTreeBuilder, displayedGroupCreator, columnUtils, autoWidthCalculator, loggerFactory) {
                 this.gridOptionsWrapper = gridOptionsWrapper;
                 this.angularGrid = angularGrid;
                 this.selectionRendererFactory = selectionRendererFactory;
@@ -3286,7 +3370,23 @@ var ag;
                 this.balancedColumnTreeBuilder = balancedColumnTreeBuilder;
                 this.displayedGroupCreator = displayedGroupCreator;
                 this.columnUtils = columnUtils;
+                this.autoWidthCalculator = autoWidthCalculator;
                 this.logger = loggerFactory.create('ColumnController');
+            };
+            ColumnController.prototype.autoSizeColumns = function (keys) {
+                var _this = this;
+                this.actionOnColumns(keys, function (column) {
+                    var requiredWidth = _this.autoWidthCalculator.getPreferredWidthForColumn(column);
+                    if (requiredWidth > 0) {
+                        var newWidth = _this.normaliseColumnWidth(column, requiredWidth);
+                        column.setActualWidth(newWidth);
+                    }
+                }, function () {
+                    return new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_RESIZED).withFinished(true);
+                });
+            };
+            ColumnController.prototype.autoSizeColumn = function (key) {
+                this.autoSizeColumns([key]);
             };
             ColumnController.prototype.getColumnsFromTree = function (rootColumns) {
                 var result = [];
@@ -3411,17 +3511,27 @@ var ag;
             ColumnController.prototype.getFirstRightPinnedColIndex = function () {
                 return this.displayedLeftColumns.length + this.displayedCenterColumns.length;
             };
-            ColumnController.prototype.setColumnWidth = function (column, newWidth, finished) {
-                if (!this.doesColumnExistInGrid(column)) {
-                    console.warn('column does not exist');
-                    return;
-                }
+            // returns the widht we can set to this col, taking into consideration min and max widths
+            ColumnController.prototype.normaliseColumnWidth = function (column, newWidth) {
                 if (newWidth < column.getMinimumWidth()) {
                     newWidth = column.getMinimumWidth();
                 }
                 if (column.isGreaterThanMax(newWidth)) {
                     newWidth = column.getColDef().maxWidth;
                 }
+                return newWidth;
+            };
+            ColumnController.prototype.setColumnWidth = function (column, newWidth, finished) {
+                if (!this.doesColumnExistInGrid(column)) {
+                    console.warn('column does not exist');
+                    return;
+                }
+                var event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_BEFORE_RESIZE).withColumn(column).withNewWidth(newWidth).withFinished(finished);
+                this.eventService.dispatchEvent(grid.Events.EVENT_COLUMN_BEFORE_RESIZE, event);
+                if (event.isDefaultPrevented()) {
+                    return;
+                }
+                newWidth = this.normaliseColumnWidth(column, newWidth);
                 // check for change first, to avoid unnecessary firing of events
                 // however we always fire 'finished' events. this is important
                 // when groups are resized, as if the group is changing slowly,
@@ -3429,7 +3539,7 @@ var ag;
                 // in all the columns in the group, but only one with get the pixel.
                 if (finished || column.getActualWidth() !== newWidth) {
                     column.setActualWidth(newWidth);
-                    var event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_RESIZED).withColumn(column).withFinished(finished);
+                    event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_RESIZED).withColumn(column).withFinished(finished);
                     this.eventService.dispatchEvent(grid.Events.EVENT_COLUMN_RESIZED, event);
                 }
             };
@@ -3676,7 +3786,7 @@ var ag;
                         return this.allColumns[i];
                     }
                 }
-                if (colMatches(this.groupAutoColumn)) {
+                if (this.groupAutoColumn && colMatches(this.groupAutoColumn)) {
                     return this.groupAutoColumn;
                 }
                 function colMatches(column) {
@@ -5790,6 +5900,19 @@ var ag;
             RowRenderer.prototype.setRowModel = function (rowModel) {
                 this.rowModel = rowModel;
             };
+            RowRenderer.prototype.getAllCellsForColumn = function (column) {
+                var eCells = [];
+                _.iterateObject(this.renderedRows, callback);
+                _.iterateObject(this.renderedBottomFloatingRows, callback);
+                _.iterateObject(this.renderedBottomFloatingRows, callback);
+                function callback(key, renderedRow) {
+                    var eCell = renderedRow.getCellForCol(column);
+                    if (eCell) {
+                        eCells.push(eCell);
+                    }
+                }
+                return eCells;
+            };
             RowRenderer.prototype.onIndividualColumnResized = function (column) {
                 var newWidthPx = column.getActualWidth() + "px";
                 var selectorForAllColsInCell = ".cell-col-" + column.getIndex();
@@ -6705,7 +6828,6 @@ var ag;
     var grid;
     (function (grid) {
         var _ = grid.Utils;
-        var constants = grid.Constants;
         var svgFactory = grid.SvgFactory.getInstance();
         var RenderedHeaderCell = (function (_super) {
             __extends(RenderedHeaderCell, _super);
@@ -6794,6 +6916,7 @@ var ag;
                 this.addSortHandling(headerCellLabel);
             };
             RenderedHeaderCell.prototype.setupComponents = function () {
+                var _this = this;
                 this.eHeaderCell = document.createElement("div");
                 this.createScope();
                 this.addClasses();
@@ -6809,6 +6932,11 @@ var ag;
                     headerCellResize.className = "ag-header-cell-resize";
                     this.eHeaderCell.appendChild(headerCellResize);
                     this.addDragHandler(headerCellResize);
+                    if (!this.gridOptionsWrapper.isSuppressAutoSize() && !colDef.suppressAutoSize) {
+                        headerCellResize.addEventListener('dblclick', function (event) {
+                            _this.columnController.autoSizeColumn(_this.column);
+                        });
+                    }
                 }
                 this.addMenu();
                 // label div
@@ -7037,6 +7165,7 @@ var ag;
                 }
             };
             RenderedHeaderGroupCell.prototype.setupComponents = function () {
+                var _this = this;
                 this.eHeaderGroupCell = document.createElement('div');
                 var classNames = ['ag-header-group-cell'];
                 // having different classes below allows the style to not have a bottom border
@@ -7054,6 +7183,21 @@ var ag;
                     this.eHeaderCellResize.className = "ag-header-cell-resize";
                     this.eHeaderGroupCell.appendChild(this.eHeaderCellResize);
                     this.addDragHandler(this.eHeaderCellResize);
+                    if (!this.gridOptionsWrapper.isSuppressAutoSize()) {
+                        this.eHeaderCellResize.addEventListener('dblclick', function (event) {
+                            // get list of all the column keys we are responsible for
+                            var keys = [];
+                            _this.columnGroup.getDisplayedLeafColumns().forEach(function (column) {
+                                // not all cols in the group may be participating with auto-resize
+                                if (!column.getColDef().suppressAutoSize) {
+                                    keys.push(column.getColId());
+                                }
+                            });
+                            if (keys.length > 0) {
+                                _this.columnController.autoSizeColumns(keys);
+                            }
+                        });
+                    }
                 }
                 // no renderer, default text render
                 var groupName = this.columnGroup.getHeaderName();
@@ -7265,8 +7409,9 @@ var ag;
         var GroupCreator = (function () {
             function GroupCreator() {
             }
-            GroupCreator.prototype.init = function (valueService) {
+            GroupCreator.prototype.init = function (valueService, gridOptionsWrapper) {
                 this.valueService = valueService;
+                this.gridOptionsWrapper = gridOptionsWrapper;
             };
             GroupCreator.prototype.group = function (rowNodes, groupedCols, expandByDefault) {
                 var topMostGroup = {
@@ -7284,6 +7429,7 @@ var ag;
                 var currentGroup;
                 var groupKey;
                 var nextGroup;
+                var includeParents = !this.gridOptionsWrapper.isSuppressParentsInRowNodes();
                 // start at -1 and go backwards, as all the positive indexes
                 // are already used by the nodes.
                 var index = -1;
@@ -7309,18 +7455,23 @@ var ag;
                                 expanded: this.isExpanded(expandByDefault, currentLevel),
                                 children: [],
                                 // for top most level, parent is null
-                                parent: currentGroup === topMostGroup ? null : currentGroup,
+                                parent: null,
                                 allChildrenCount: 0,
                                 level: currentGroup.level + 1,
                                 _childrenMap: {} //this is a temporary map, we remove at the end of this method
                             };
+                            if (includeParents) {
+                                nextGroup.parent = currentGroup === topMostGroup ? null : currentGroup;
+                            }
                             currentGroup._childrenMap[groupKey] = nextGroup;
                             currentGroup.children.push(nextGroup);
                             allGroups.push(nextGroup);
                         }
                         nextGroup.allChildrenCount++;
                         if (currentLevel == levelToInsertChild) {
-                            node.parent = nextGroup === topMostGroup ? null : nextGroup;
+                            if (includeParents) {
+                                node.parent = nextGroup === topMostGroup ? null : nextGroup;
+                            }
                             nextGroup.children.push(node);
                         }
                         else {
@@ -7328,7 +7479,6 @@ var ag;
                         }
                     }
                 }
-                "";
                 //remove the temporary map
                 for (i = 0; i < allGroups.length; i++) {
                     delete allGroups[i]._childrenMap;
@@ -8265,10 +8415,20 @@ var ag;
                 this.setTotalLabels();
                 this.loadPage();
             };
+            // the native method number.toLocaleString(undefined, {minimumFractionDigits: 0}) puts in decimal places in IE
+            PaginationController.prototype.myToLocaleString = function (input) {
+                if (typeof input !== 'number') {
+                    return '';
+                }
+                else {
+                    // took this from: http://blog.tompawlak.org/number-currency-formatting-javascript
+                    return input.toString().replace(/(\d)(?=(\d{3})+(?!\d))/g, "$1,");
+                }
+            };
             PaginationController.prototype.setTotalLabels = function () {
                 if (this.foundMaxRow) {
-                    this.lbTotal.innerHTML = this.totalPages.toLocaleString();
-                    this.lbRecordCount.innerHTML = this.rowCount.toLocaleString();
+                    this.lbTotal.innerHTML = this.myToLocaleString(this.totalPages);
+                    this.lbRecordCount.innerHTML = this.myToLocaleString(this.rowCount);
                 }
                 else {
                     var moreText = this.gridOptionsWrapper.getLocaleTextFunc()('more', 'more');
@@ -8311,8 +8471,8 @@ var ag;
                         endRow = this.rowCount;
                     }
                 }
-                this.lbFirstRowOnPage.innerHTML = (startRow).toLocaleString();
-                this.lbLastRowOnPage.innerHTML = (endRow).toLocaleString();
+                this.lbFirstRowOnPage.innerHTML = this.myToLocaleString(startRow);
+                this.lbLastRowOnPage.innerHTML = this.myToLocaleString(endRow);
                 // show the summary panel, when first shown, this is blank
                 this.ePageRowSummaryPanel.style.visibility = "";
             };
@@ -8320,7 +8480,7 @@ var ag;
                 this.enableOrDisableButtons();
                 var startRow = this.currentPage * this.datasource.pageSize;
                 var endRow = (this.currentPage + 1) * this.datasource.pageSize;
-                this.lbCurrent.innerHTML = (this.currentPage + 1).toLocaleString();
+                this.lbCurrent.innerHTML = this.myToLocaleString(this.currentPage + 1);
                 this.callVersion++;
                 var callVersionCopy = this.callVersion;
                 var that = this;
@@ -10128,8 +10288,9 @@ var ag;
                 if (suppressEvents === void 0) { suppressEvents = false; }
                 this.selectionController.selectNode(node, tryMulti, suppressEvents);
             };
-            GridApi.prototype.deselectNode = function (node) {
-                this.selectionController.deselectNode(node);
+            GridApi.prototype.deselectNode = function (node, suppressEvents) {
+                if (suppressEvents === void 0) { suppressEvents = false; }
+                this.selectionController.deselectNode(node, suppressEvents);
             };
             GridApi.prototype.selectAll = function () {
                 this.selectionController.selectAll();
@@ -10312,7 +10473,7 @@ var ag;
                     result = this.executeValueGetter(colDef.valueGetter, data, colDef, node);
                 }
                 else if (field && data) {
-                    result = data[field];
+                    result = this.getValueUsingField(data, field);
                 }
                 else {
                     result = undefined;
@@ -10323,6 +10484,27 @@ var ag;
                     result = this.executeValueGetter(cellValueGetter, data, colDef, node);
                 }
                 return result;
+            };
+            ValueService.prototype.getValueUsingField = function (data, field) {
+                if (!field || !data) {
+                    return;
+                }
+                // if no '.', then it's not a deep value
+                if (field.indexOf('.') < 0) {
+                    return data[field];
+                }
+                else {
+                    // otherwise it is a deep value, so need to dig for it
+                    var fields = field.split('.');
+                    var currentObject = data;
+                    for (var i = 0; i < fields.length; i++) {
+                        currentObject = currentObject[fields[i]];
+                        if (!currentObject) {
+                            return null;
+                        }
+                    }
+                    return currentObject;
+                }
             };
             ValueService.prototype.executeValueGetter = function (valueGetter, data, colDef, node) {
                 var context = this.gridOptionsWrapper.getContext();
@@ -10547,12 +10729,14 @@ var ag;
                 var loggerFactory = new grid.LoggerFactory();
                 var dragAndDropService = new grid.DragAndDropService();
                 var columnUtils = new grid.ColumnUtils();
+                var autoWidthCalculator = new grid.AutoWidthCalculator();
                 // initialise all the beans
                 gridOptionsWrapper.init(this.gridOptions, eventService);
                 loggerFactory.init(gridOptionsWrapper);
                 this.logger = loggerFactory.create('Grid');
                 this.logger.log('initialising');
                 columnUtils.init(gridOptionsWrapper);
+                autoWidthCalculator.init(rowRenderer, gridPanel);
                 dragAndDropService.init(loggerFactory);
                 eventService.init(loggerFactory);
                 gridPanel.init(gridOptionsWrapper, columnController, rowRenderer, masterSlaveService, loggerFactory);
@@ -10563,13 +10747,13 @@ var ag;
                 selectionRendererFactory.init(this, selectionController);
                 balancedColumnTreeBuilder.init(gridOptionsWrapper, loggerFactory, columnUtils);
                 displayedGroupCreator.init(columnUtils);
-                columnController.init(this, selectionRendererFactory, gridOptionsWrapper, expressionService, valueService, masterSlaveService, eventService, balancedColumnTreeBuilder, displayedGroupCreator, columnUtils, loggerFactory);
+                columnController.init(this, selectionRendererFactory, gridOptionsWrapper, expressionService, valueService, masterSlaveService, eventService, balancedColumnTreeBuilder, displayedGroupCreator, columnUtils, autoWidthCalculator, loggerFactory);
                 rowRenderer.init(columnController, gridOptionsWrapper, gridPanel, this, selectionRendererFactory, $compile, $scope, selectionController, expressionService, templateService, valueService, eventService);
                 headerRenderer.init(gridOptionsWrapper, columnController, gridPanel, this, filterManager, $scope, $compile);
                 inMemoryRowController.init(gridOptionsWrapper, columnController, this, filterManager, $scope, groupCreator, valueService, eventService);
                 virtualPageRowController.init(rowRenderer, gridOptionsWrapper, this);
                 valueService.init(gridOptionsWrapper, expressionService, columnController);
-                groupCreator.init(valueService);
+                groupCreator.init(valueService, gridOptionsWrapper);
                 masterSlaveService.init(gridOptionsWrapper, columnController, gridPanel, loggerFactory, eventService);
                 if (globalEventListener) {
                     eventService.addGlobalListener(globalEventListener);
@@ -10997,6 +11181,11 @@ var ag;
                 // both of the two below should be done in gridPanel, the gridPanel should register 'resize' to the panel
                 if (sizeChanged) {
                     this.rowRenderer.drawVirtualRows();
+                    var event = {
+                        clientWidth: this.eRootPanel.getGui().clientWidth,
+                        clientHeight: this.eRootPanel.getGui().clientHeight
+                    };
+                    this.eventService.dispatchEvent(grid.Events.EVENT_GRID_SIZE_CHANGED, event);
                 }
             };
             return Grid;
@@ -11137,7 +11326,8 @@ var ag;
                 'angularCompileHeaders', 'groupSuppressAutoColumn', 'groupSelectsChildren', 'groupHideGroupColumns',
                 'groupIncludeFooter', 'groupUseEntireRow', 'groupSuppressRow', 'groupSuppressBlankHeader', 'forPrint',
                 'suppressMenuHide', 'rowDeselection', 'unSortIcon', 'suppressMultiSort', 'suppressScrollLag',
-                'singleClickEdit', 'suppressLoadingOverlay', 'suppressNoRowsOverlay'
+                'singleClickEdit', 'suppressLoadingOverlay', 'suppressNoRowsOverlay', 'suppressAutoSize',
+                'suppressParentsInRowNodes'
             ];
             ComponentUtil.WITH_IMPACT_NUMBER_PROPERTIES = ['pinnedColumnCount', 'headerHeight'];
             ComponentUtil.WITH_IMPACT_BOOLEAN_PROPERTIES = ['showToolPanel'];
@@ -11191,6 +11381,7 @@ var ag;
                 this.rowClicked = new _ng.core.EventEmitter();
                 this.rowDoubleClicked = new _ng.core.EventEmitter();
                 this.ready = new _ng.core.EventEmitter();
+                this.gridSizeChanged = new _ng.core.EventEmitter();
                 // column grid events
                 this.columnEverythingChanged = new _ng.core.EventEmitter();
                 this.columnRowGroupChanged = new _ng.core.EventEmitter();
@@ -11199,6 +11390,7 @@ var ag;
                 this.columnVisible = new _ng.core.EventEmitter();
                 this.columnGroupOpened = new _ng.core.EventEmitter();
                 this.columnResized = new _ng.core.EventEmitter();
+                this.columnBeforeResize = new _ng.EventEmitter();
                 this.columnPinnedCountChanged = new _ng.core.EventEmitter();
             }
             // this gets called after the directive is initialised
@@ -11234,6 +11426,9 @@ var ag;
                         break;
                     case grid.Events.EVENT_COLUMN_RESIZED:
                         emitter = this.columnResized;
+                        break;
+                    case grid.Events.EVENT_COLUMN_BEFORE_RESIZE:
+                        emitter = this.columnBeforeResize;
                         break;
                     case grid.Events.EVENT_COLUMN_VALUE_CHANGE:
                         emitter = this.columnValueChanged;
@@ -11295,6 +11490,9 @@ var ag;
                     case grid.Events.EVENT_READY:
                         emitter = this.ready;
                         break;
+                    case grid.Events.EVENT_GRID_SIZE_CHANGED:
+                        emitter = this.ready;
+                        break;
                     default:
                         console.log('ag-Grid: AgGridNg2 - unknown event type: ' + eventType);
                         return;
@@ -11321,10 +11519,10 @@ var ag;
                         'modelUpdated', 'cellClicked', 'cellDoubleClicked', 'cellContextMenu', 'cellValueChanged', 'cellFocused',
                         'rowSelected', 'rowDeselected', 'selectionChanged', 'beforeFilterChanged', 'afterFilterChanged',
                         'filterModified', 'beforeSortChanged', 'afterSortChanged', 'virtualRowRemoved',
-                        'rowClicked', 'rowDoubleClicked', 'ready',
+                        'rowClicked', 'rowDoubleClicked', 'ready', 'gridSizeChanged',
                         // column events
                         'columnEverythingChanged', 'columnRowGroupChanged', 'columnValueChanged', 'columnMoved',
-                        'columnVisible', 'columnGroupOpened', 'columnResized', 'columnPinnedCountChanged'],
+                        'columnVisible', 'columnGroupOpened', 'columnBeforeResize', 'columnResized', 'columnPinnedCountChanged'],
                     inputs: ['gridOptions']
                         .concat(grid.ComponentUtil.SIMPLE_PROPERTIES)
                         .concat(grid.ComponentUtil.SIMPLE_BOOLEAN_PROPERTIES)
@@ -11521,3 +11719,16 @@ if (typeof window !== 'undefined') {
         new ag.grid.Grid(eGridDiv, gridOptions);
     }
 }).call(__RANDOM_GLOBAL_VARIABLE_FSKJFHSKJFHKSDAJF);
+var ag;
+(function (ag) {
+    var grid;
+    (function (grid) {
+        var CellRendererUtils = (function () {
+            function CellRendererUtils() {
+            }
+            CellRendererUtils.prototype.init = function () {
+            };
+            return CellRendererUtils;
+        })();
+    })(grid = ag.grid || (ag.grid = {}));
+})(ag || (ag = {}));
