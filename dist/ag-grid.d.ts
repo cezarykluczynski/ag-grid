@@ -1,4 +1,4 @@
-// Type definitions for ag-grid v3.1.0
+// Type definitions for ag-grid v3.1.1
 // Project: http://www.ag-grid.com/
 // Definitions by: Niall Crosby <https://github.com/ceolter/>
 // Definitions: https://github.com/borisyankov/DefinitelyTyped
@@ -8,13 +8,17 @@ declare module ag.grid {
         private column;
         private columns;
         private columnGroup;
+        private defaultPrevented;
         private fromIndex;
         private toIndex;
         private finished;
+        private newWidth;
         private visible;
         private pinned;
         constructor(type: string);
         toString(): string;
+        preventDefault(): ColumnChangeEvent;
+        isDefaultPrevented(): boolean;
         withPinned(pinned: string): ColumnChangeEvent;
         withVisible(visible: boolean): ColumnChangeEvent;
         isVisible(): boolean;
@@ -25,6 +29,7 @@ declare module ag.grid {
         withColumnGroup(columnGroup: ColumnGroup): ColumnChangeEvent;
         withFromIndex(fromIndex: number): ColumnChangeEvent;
         withToIndex(toIndex: number): ColumnChangeEvent;
+        withNewWidth(newWidth: number): ColumnChangeEvent;
         getFromIndex(): number;
         getToIndex(): number;
         getType(): string;
@@ -66,6 +71,7 @@ declare module ag.grid {
         customHeader?: string;
         customFooter?: string;
         allColumns?: boolean;
+        columnSeparator?: string;
     }
     class CsvCreator {
         private rowController;
@@ -97,6 +103,7 @@ declare module ag.grid {
         static EVENT_COLUMN_GROUP_OPENED: string;
         /** One or more columns was resized. If just one, the column in the event is set. */
         static EVENT_COLUMN_RESIZED: string;
+        static EVENT_COLUMN_BEFORE_RESIZE: string;
         static EVENT_MODEL_UPDATED: string;
         static EVENT_CELL_CLICKED: string;
         static EVENT_CELL_DOUBLE_CLICKED: string;
@@ -1355,8 +1362,10 @@ declare module ag.grid {
         private createScope();
         private addAttributes();
         private addMenu();
+        private removeSortIcons();
         private addSortIcons();
         private setupComponents();
+        private addSort();
         private addResize();
         private useRenderer(headerNameValue, headerCellRenderer);
         refreshFilterIcon(): void;
@@ -2210,6 +2219,7 @@ declare module ag.grid {
         columnVisible: any;
         columnGroupOpened: any;
         columnResized: any;
+        columnBeforeResize: any;
         columnPinnedCountChanged: any;
         virtualPaging: boolean;
         toolPanelSuppressGroups: boolean;

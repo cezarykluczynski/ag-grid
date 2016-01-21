@@ -33,11 +33,21 @@ var ag;
                 if (this.pinned) {
                     result += ', visible: ' + this.visible;
                 }
+                if (this.newWidth) {
+                    result += ', newWidth: ' + this.newWidth;
+                }
                 if (typeof this.finished == 'boolean') {
                     result += ', finished: ' + this.finished;
                 }
                 result += '}';
                 return result;
+            };
+            ColumnChangeEvent.prototype.preventDefault = function () {
+                this.defaultPrevented = true;
+                return this;
+            };
+            ColumnChangeEvent.prototype.isDefaultPrevented = function () {
+                return this.defaultPrevented;
             };
             ColumnChangeEvent.prototype.withPinned = function (pinned) {
                 this.pinned = pinned;
@@ -75,6 +85,10 @@ var ag;
             };
             ColumnChangeEvent.prototype.withToIndex = function (toIndex) {
                 this.toIndex = toIndex;
+                return this;
+            };
+            ColumnChangeEvent.prototype.withNewWidth = function (newWidth) {
+                this.newWidth = newWidth;
                 return this;
             };
             ColumnChangeEvent.prototype.getFromIndex = function () {
@@ -300,6 +314,7 @@ var ag;
             Events.EVENT_COLUMN_GROUP_OPENED = 'columnGroupOpened';
             /** One or more columns was resized. If just one, the column in the event is set. */
             Events.EVENT_COLUMN_RESIZED = 'columnResized';
+            Events.EVENT_COLUMN_BEFORE_RESIZE = 'columnBeforeResize';
             Events.EVENT_MODEL_UPDATED = 'modelUpdated';
             Events.EVENT_CELL_CLICKED = 'cellClicked';
             Events.EVENT_CELL_DOUBLE_CLICKED = 'cellDoubleClicked';
@@ -3618,6 +3633,11 @@ var ag;
                 if (!column) {
                     return;
                 }
+                var event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_BEFORE_RESIZE).withColumn(column).withNewWidth(newWidth).withFinished(finished);
+                this.eventService.dispatchEvent(grid.Events.EVENT_COLUMN_BEFORE_RESIZE, event);
+                if (event.isDefaultPrevented()) {
+                    return;
+                }
                 newWidth = this.normaliseColumnWidth(column, newWidth);
                 // check for change first, to avoid unnecessary firing of events
                 // however we always fire 'finished' events. this is important
@@ -3626,7 +3646,7 @@ var ag;
                 // in all the columns in the group, but only one with get the pixel.
                 if (finished || column.getActualWidth() !== newWidth) {
                     column.setActualWidth(newWidth);
-                    var event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_RESIZED).withColumn(column).withFinished(finished);
+                    event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_RESIZED).withColumn(column).withFinished(finished);
                     this.eventService.dispatchEvent(grid.Events.EVENT_COLUMN_RESIZED, event);
                 }
             };
@@ -11691,6 +11711,7 @@ var ag;
                 this.columnVisible = new _ng.core.EventEmitter();
                 this.columnGroupOpened = new _ng.core.EventEmitter();
                 this.columnResized = new _ng.core.EventEmitter();
+                this.columnBeforeResize = new _ng.EventEmitter();
                 this.columnPinnedCountChanged = new _ng.core.EventEmitter();
             }
             // this gets called after the directive is initialised
@@ -11726,6 +11747,9 @@ var ag;
                         break;
                     case grid.Events.EVENT_COLUMN_RESIZED:
                         emitter = this.columnResized;
+                        break;
+                    case grid.Events.EVENT_COLUMN_BEFORE_RESIZE:
+                        emitter = this.columnBeforeResize;
                         break;
                     case grid.Events.EVENT_COLUMN_VALUE_CHANGE:
                         emitter = this.columnValueChanged;
@@ -11819,7 +11843,7 @@ var ag;
                         'rowClicked', 'rowDoubleClicked', 'ready', 'gridSizeChanged',
                         // column events
                         'columnEverythingChanged', 'columnRowGroupChanged', 'columnValueChanged', 'columnMoved',
-                        'columnVisible', 'columnGroupOpened', 'columnResized', 'columnPinnedCountChanged'],
+                        'columnVisible', 'columnGroupOpened', 'columnBeforeResize', 'columnResized', 'columnPinnedCountChanged'],
                     inputs: ['gridOptions']
                         .concat(grid.ComponentUtil.SIMPLE_PROPERTIES)
                         .concat(grid.ComponentUtil.SIMPLE_BOOLEAN_PROPERTIES)
