@@ -8,13 +8,17 @@ declare module ag.grid {
         private column;
         private columns;
         private columnGroup;
+        private defaultPrevented;
         private fromIndex;
         private toIndex;
         private finished;
+        private newWidth;
         private visible;
         private pinned;
         constructor(type: string);
         toString(): string;
+        preventDefault(): ColumnChangeEvent;
+        isDefaultPrevented(): boolean;
         withPinned(pinned: string): ColumnChangeEvent;
         withVisible(visible: boolean): ColumnChangeEvent;
         isVisible(): boolean;
@@ -25,6 +29,7 @@ declare module ag.grid {
         withColumnGroup(columnGroup: ColumnGroup): ColumnChangeEvent;
         withFromIndex(fromIndex: number): ColumnChangeEvent;
         withToIndex(toIndex: number): ColumnChangeEvent;
+        withNewWidth(newWidth: number): ColumnChangeEvent;
         getFromIndex(): number;
         getToIndex(): number;
         getType(): string;
@@ -97,6 +102,7 @@ declare module ag.grid {
         static EVENT_COLUMN_GROUP_OPENED: string;
         /** One or more columns was resized. If just one, the column in the event is set. */
         static EVENT_COLUMN_RESIZED: string;
+        static EVENT_COLUMN_BEFORE_RESIZE: string;
         static EVENT_MODEL_UPDATED: string;
         static EVENT_CELL_CLICKED: string;
         static EVENT_CELL_DOUBLE_CLICKED: string;
@@ -879,6 +885,7 @@ declare module ag.grid {
         getAllColumns(): Column[];
         getDisplayedLeftColumns(): Column[];
         getDisplayedCenterColumns(): Column[];
+        getDisplayedRightColumns(): Column[];
         getRowGroupColumns(): Column[];
         getValueColumns(): Column[];
         moveColumn(fromIndex: number, toIndex: number): void;
@@ -954,6 +961,7 @@ declare module ag.grid {
         getRowGroupColumns(): Column[];
         getDisplayedCenterColumns(): Column[];
         getDisplayedLeftColumns(): Column[];
+        getDisplayedRightColumns(): Column[];
         getAllColumns(): Column[];
         setColumnVisible(key: Column | ColDef | String, visible: boolean): void;
         setColumnsVisible(keys: (Column | ColDef | String)[], visible: boolean): void;
@@ -2208,6 +2216,7 @@ declare module ag.grid {
         columnVisible: any;
         columnGroupOpened: any;
         columnResized: any;
+        columnBeforeResize: any;
         columnPinnedCountChanged: any;
         virtualPaging: boolean;
         toolPanelSuppressGroups: boolean;
