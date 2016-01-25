@@ -8,13 +8,17 @@ declare module ag.grid {
         private column;
         private columns;
         private columnGroup;
+        private defaultPrevented;
         private fromIndex;
         private toIndex;
         private finished;
+        private newWidth;
         private visible;
         private pinned;
         constructor(type: string);
         toString(): string;
+        preventDefault(): ColumnChangeEvent;
+        isDefaultPrevented(): boolean;
         withPinned(pinned: string): ColumnChangeEvent;
         withVisible(visible: boolean): ColumnChangeEvent;
         isVisible(): boolean;
@@ -25,6 +29,7 @@ declare module ag.grid {
         withColumnGroup(columnGroup: ColumnGroup): ColumnChangeEvent;
         withFromIndex(fromIndex: number): ColumnChangeEvent;
         withToIndex(toIndex: number): ColumnChangeEvent;
+        withNewWidth(newWidth: number): ColumnChangeEvent;
         getFromIndex(): number;
         getToIndex(): number;
         getType(): string;
@@ -96,8 +101,11 @@ declare module ag.grid {
         static EVENT_COLUMN_PINNED: string;
         /** A column group was opened / closed */
         static EVENT_COLUMN_GROUP_OPENED: string;
+        /** A column group was opened / closed */
+        static EVENT_ROW_GROUP_OPENED: string;
         /** One or more columns was resized. If just one, the column in the event is set. */
         static EVENT_COLUMN_RESIZED: string;
+        static EVENT_COLUMN_BEFORE_RESIZE: string;
         static EVENT_MODEL_UPDATED: string;
         static EVENT_CELL_CLICKED: string;
         static EVENT_CELL_DOUBLE_CLICKED: string;
@@ -1206,7 +1214,7 @@ declare module ag.grid {
     }
 }
 declare module ag.grid {
-    function groupCellRendererFactory(gridOptionsWrapper: GridOptionsWrapper, selectionRendererFactory: SelectionRendererFactory, expressionService: ExpressionService): (params: any) => HTMLSpanElement;
+    function groupCellRendererFactory(gridOptionsWrapper: GridOptionsWrapper, selectionRendererFactory: SelectionRendererFactory, expressionService: ExpressionService, eventService: EventService): (params: any) => HTMLSpanElement;
 }
 declare module ag.grid {
     class RowRenderer {
@@ -1953,7 +1961,7 @@ declare module ag.grid {
         groupAggFunction?(nodes: any[]): any;
         getBusinessKeyForNode?(node: RowNode): string;
         getHeaderCellTemplate?: (params: any) => string | HTMLElement;
-        onReady?(api: any): void;
+        onReady?(params: any): void;
         onModelUpdated?(): void;
         onCellClicked?(params: any): void;
         onCellDoubleClicked?(params: any): void;
@@ -2170,13 +2178,14 @@ declare module ag.grid {
         static SIMPLE_PROPERTIES: string[];
         static SIMPLE_NUMBER_PROPERTIES: string[];
         static SIMPLE_BOOLEAN_PROPERTIES: string[];
+        static WITH_IMPACT_STRING_PROPERTIES: string[];
         static WITH_IMPACT_NUMBER_PROPERTIES: string[];
         static WITH_IMPACT_BOOLEAN_PROPERTIES: string[];
         static WITH_IMPACT_OTHER_PROPERTIES: string[];
         static CALLBACKS: string[];
         static ALL_PROPERTIES: string[];
         static copyAttributesToGridOptions(gridOptions: GridOptions, component: any): GridOptions;
-        static processOnChange(changes: any, gridOptions: GridOptions, component: any): void;
+        static processOnChange(changes: any, gridOptions: GridOptions, api: GridApi): void;
         static toBoolean(value: any): boolean;
         static toNumber(value: any): number;
     }
@@ -2208,6 +2217,7 @@ declare module ag.grid {
         rowDoubleClicked: any;
         ready: any;
         gridSizeChanged: any;
+        rowGroupOpened: any;
         columnEverythingChanged: any;
         columnRowGroupChanged: any;
         columnValueChanged: any;
@@ -2215,6 +2225,7 @@ declare module ag.grid {
         columnVisible: any;
         columnGroupOpened: any;
         columnResized: any;
+        columnBeforeResize: any;
         columnPinnedCountChanged: any;
         virtualPaging: boolean;
         toolPanelSuppressGroups: boolean;

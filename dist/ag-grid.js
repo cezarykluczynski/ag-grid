@@ -33,11 +33,21 @@ var ag;
                 if (this.pinned) {
                     result += ', visible: ' + this.visible;
                 }
+                if (this.newWidth) {
+                    result += ', newWidth: ' + this.newWidth;
+                }
                 if (typeof this.finished == 'boolean') {
                     result += ', finished: ' + this.finished;
                 }
                 result += '}';
                 return result;
+            };
+            ColumnChangeEvent.prototype.preventDefault = function () {
+                this.defaultPrevented = true;
+                return this;
+            };
+            ColumnChangeEvent.prototype.isDefaultPrevented = function () {
+                return this.defaultPrevented;
             };
             ColumnChangeEvent.prototype.withPinned = function (pinned) {
                 this.pinned = pinned;
@@ -75,6 +85,10 @@ var ag;
             };
             ColumnChangeEvent.prototype.withToIndex = function (toIndex) {
                 this.toIndex = toIndex;
+                return this;
+            };
+            ColumnChangeEvent.prototype.withNewWidth = function (newWidth) {
+                this.newWidth = newWidth;
                 return this;
             };
             ColumnChangeEvent.prototype.getFromIndex = function () {
@@ -298,8 +312,11 @@ var ag;
             Events.EVENT_COLUMN_PINNED = 'columnPinned';
             /** A column group was opened / closed */
             Events.EVENT_COLUMN_GROUP_OPENED = 'columnGroupOpened';
+            /** A column group was opened / closed */
+            Events.EVENT_ROW_GROUP_OPENED = 'rowGroupOpened';
             /** One or more columns was resized. If just one, the column in the event is set. */
             Events.EVENT_COLUMN_RESIZED = 'columnResized';
+            Events.EVENT_COLUMN_BEFORE_RESIZE = 'columnBeforeResize';
             Events.EVENT_MODEL_UPDATED = 'modelUpdated';
             Events.EVENT_CELL_CLICKED = 'cellClicked';
             Events.EVENT_CELL_DOUBLE_CLICKED = 'cellDoubleClicked';
@@ -3620,6 +3637,11 @@ var ag;
                 if (!column) {
                     return;
                 }
+                var event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_BEFORE_RESIZE).withColumn(column).withNewWidth(newWidth).withFinished(finished);
+                this.eventService.dispatchEvent(grid.Events.EVENT_COLUMN_BEFORE_RESIZE, event);
+                if (event.isDefaultPrevented()) {
+                    return;
+                }
                 newWidth = this.normaliseColumnWidth(column, newWidth);
                 // check for change first, to avoid unnecessary firing of events
                 // however we always fire 'finished' events. this is important
@@ -3628,7 +3650,7 @@ var ag;
                 // in all the columns in the group, but only one with get the pixel.
                 if (finished || column.getActualWidth() !== newWidth) {
                     column.setActualWidth(newWidth);
-                    var event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_RESIZED).withColumn(column).withFinished(finished);
+                    event = new grid.ColumnChangeEvent(grid.Events.EVENT_COLUMN_RESIZED).withColumn(column).withFinished(finished);
                     this.eventService.dispatchEvent(grid.Events.EVENT_COLUMN_RESIZED, event);
                 }
             };
@@ -3826,7 +3848,7 @@ var ag;
                         // following ensures we are left with boolean true or false, eg converts (null, undefined, 0) all to true
                         oldColumn.setVisible(!stateItem.hide);
                         // sets pinned to 'left' or 'right'
-                        oldColumn.setPinned(stateItem.pinned === true);
+                        oldColumn.setPinned(stateItem.pinned);
                         // if width provided and valid, use it, otherwise stick with the old width
                         if (stateItem.width >= constants.MIN_COL_WIDTH) {
                             oldColumn.setActualWidth(stateItem.width);
@@ -5880,7 +5902,7 @@ var ag;
         var svgFactory = grid.SvgFactory.getInstance();
         var utils = grid.Utils;
         var constants = grid.Constants;
-        function groupCellRendererFactory(gridOptionsWrapper, selectionRendererFactory, expressionService) {
+        function groupCellRendererFactory(gridOptionsWrapper, selectionRendererFactory, expressionService, eventService) {
             return function groupCellRenderer(params) {
                 var eGroupCell = document.createElement('span');
                 var node = params.node;
@@ -5972,6 +5994,8 @@ var ag;
                 var refreshIndex = getRefreshFromIndex(params);
                 params.api.onGroupExpandedOrCollapsed(refreshIndex);
                 showAndHideExpandAndContract(eExpandIcon, eContractIcon, params.node.expanded);
+                var event = { node: params.node };
+                eventService.dispatchEvent(grid.Events.EVENT_ROW_GROUP_OPENED, event);
             }
             function createGroupExpandIcon(expanded) {
                 var eIcon;
@@ -6085,7 +6109,7 @@ var ag;
                 this.eventService = eventService;
                 this.floatingRowModel = floatingRowModel;
                 this.cellRendererMap = {
-                    'group': grid.groupCellRendererFactory(gridOptionsWrapper, selectionRendererFactory, expressionService),
+                    'group': grid.groupCellRendererFactory(gridOptionsWrapper, selectionRendererFactory, expressionService, eventService),
                     'default': function (params) {
                         return params.value;
                     }
@@ -10969,8 +10993,11 @@ var ag;
                 this.finished = false;
                 this.periodicallyDoLayout();
                 // if ready function provided, use it
-                var readyParams = { api: gridOptions.api };
-                this.eventService.dispatchEvent(grid.Events.EVENT_READY, readyParams);
+                var readyEvent = {
+                    api: gridOptions.api,
+                    columnApi: gridOptions.columnApi
+                };
+                this.eventService.dispatchEvent(grid.Events.EVENT_READY, readyEvent);
                 this.logger.log('initialised');
             }
             Grid.prototype.decideStartingOverlay = function () {
@@ -11520,7 +11547,10 @@ var ag;
                 // to allow array style lookup in TypeScript, take type away from 'this' and 'gridOptions'
                 var pGridOptions = gridOptions;
                 // add in all the simple properties
-                ComponentUtil.SIMPLE_PROPERTIES.concat(ComponentUtil.WITH_IMPACT_OTHER_PROPERTIES).forEach(function (key) {
+                ComponentUtil.SIMPLE_PROPERTIES
+                    .concat(ComponentUtil.WITH_IMPACT_OTHER_PROPERTIES)
+                    .concat(ComponentUtil.WITH_IMPACT_STRING_PROPERTIES)
+                    .forEach(function (key) {
                     if (typeof (component)[key] !== 'undefined') {
                         pGridOptions[key] = component[key];
                     }
@@ -11537,12 +11567,15 @@ var ag;
                 });
                 return gridOptions;
             };
-            ComponentUtil.processOnChange = function (changes, gridOptions, component) {
-                if (!component._initialised || !changes) {
+            // change this method, the caller should know if it's initialised or not, plus 'initialised'
+            // is not relevant for all component types.
+            // maybe pass in the api and columnApi instead???
+            ComponentUtil.processOnChange = function (changes, gridOptions, api) {
+                //if (!component._initialised || !changes) { return; }
+                if (!changes) {
                     return;
                 }
                 // to allow array style lookup in TypeScript, take type away from 'this' and 'gridOptions'
-                //var pThis = <any>this;
                 var pGridOptions = gridOptions;
                 // check if any change for the simple types, and if so, then just copy in the new value
                 ComponentUtil.SIMPLE_PROPERTIES.forEach(function (key) {
@@ -11561,39 +11594,33 @@ var ag;
                     }
                 });
                 if (changes.showToolPanel) {
-                    component.api.showToolPanel(component.showToolPanel);
+                    api.showToolPanel(changes.showToolPanel.currentValue);
                 }
                 if (changes.quickFilterText) {
-                    component.api.setQuickFilter(component.quickFilterText);
+                    api.setQuickFilter(changes.quickFilterText.currentValue);
                 }
                 if (changes.rowData) {
-                    component.api.setRowData(component.rowData);
+                    api.setRowData(changes.rowData.currentValue);
                 }
                 if (changes.floatingTopRowData) {
-                    component.api.setFloatingTopRowData(component.floatingTopRowData);
+                    api.setFloatingTopRowData(changes.floatingTopRowData.currentValue);
                 }
                 if (changes.floatingBottomRowData) {
-                    component.api.setFloatingBottomRowData(component.floatingBottomRowData);
+                    api.setFloatingBottomRowData(changes.floatingBottomRowData.currentValue);
                 }
                 if (changes.columnDefs) {
-                    component.api.setColumnDefs(component.columnDefs);
+                    api.setColumnDefs(changes.columnDefs.currentValue);
                 }
                 if (changes.datasource) {
-                    component.api.setDatasource(component.datasource);
-                }
-                if (changes.pinnedColumnCount) {
-                    component.columnApi.setPinnedColumnCount(component.pinnedColumnCount);
-                }
-                if (changes.pinnedColumnCount) {
-                    component.columnApi.setPinnedColumnCount(component.pinnedColumnCount);
+                    api.setDatasource(changes.datasource.currentValue);
                 }
                 if (changes.headerHeight) {
-                    component.api.setHeaderHeight(component.headerHeight);
+                    api.setHeaderHeight(changes.headerHeight.currentValue);
                 }
                 // need to review this, it is not impacting anything, they should
                 // call something on the API to update the grid
                 if (changes.groupAggFunction) {
-                    component.gridOptions.groupAggFunction = component.groupAggFunction;
+                    gridOptions.groupAggFunction = changes.groupAggFunction.currentValue;
                 }
             };
             ComponentUtil.toBoolean = function (value) {
@@ -11642,17 +11669,19 @@ var ag;
                 'singleClickEdit', 'suppressLoadingOverlay', 'suppressNoRowsOverlay', 'suppressAutoSize',
                 'suppressParentsInRowNodes'
             ];
-            ComponentUtil.WITH_IMPACT_NUMBER_PROPERTIES = ['pinnedColumnCount', 'headerHeight'];
+            ComponentUtil.WITH_IMPACT_STRING_PROPERTIES = ['quickFilterText'];
+            ComponentUtil.WITH_IMPACT_NUMBER_PROPERTIES = ['headerHeight'];
             ComponentUtil.WITH_IMPACT_BOOLEAN_PROPERTIES = ['showToolPanel'];
             ComponentUtil.WITH_IMPACT_OTHER_PROPERTIES = [
                 'rowData', 'floatingTopRowData', 'floatingBottomRowData',
-                'columnDefs', 'datasource', 'quickFilterText'];
+                'columnDefs', 'datasource'];
             ComponentUtil.CALLBACKS = ['groupRowInnerRenderer', 'groupRowRenderer', 'groupAggFunction',
                 'isScrollLag', 'isExternalFilterPresent', 'doesExternalFilterPass', 'getRowClass', 'getRowStyle',
                 'headerCellRenderer', 'getHeaderCellTemplate'];
             ComponentUtil.ALL_PROPERTIES = ComponentUtil.SIMPLE_PROPERTIES
                 .concat(ComponentUtil.SIMPLE_NUMBER_PROPERTIES)
                 .concat(ComponentUtil.SIMPLE_BOOLEAN_PROPERTIES)
+                .concat(ComponentUtil.WITH_IMPACT_STRING_PROPERTIES)
                 .concat(ComponentUtil.WITH_IMPACT_NUMBER_PROPERTIES)
                 .concat(ComponentUtil.WITH_IMPACT_BOOLEAN_PROPERTIES)
                 .concat(ComponentUtil.WITH_IMPACT_OTHER_PROPERTIES);
@@ -11695,6 +11724,7 @@ var ag;
                 this.rowDoubleClicked = new _ng.core.EventEmitter();
                 this.ready = new _ng.core.EventEmitter();
                 this.gridSizeChanged = new _ng.core.EventEmitter();
+                this.rowGroupOpened = new _ng.core.EventEmitter();
                 // column grid events
                 this.columnEverythingChanged = new _ng.core.EventEmitter();
                 this.columnRowGroupChanged = new _ng.core.EventEmitter();
@@ -11703,6 +11733,7 @@ var ag;
                 this.columnVisible = new _ng.core.EventEmitter();
                 this.columnGroupOpened = new _ng.core.EventEmitter();
                 this.columnResized = new _ng.core.EventEmitter();
+                this.columnBeforeResize = new _ng.EventEmitter();
                 this.columnPinnedCountChanged = new _ng.core.EventEmitter();
             }
             // this gets called after the directive is initialised
@@ -11716,7 +11747,9 @@ var ag;
                 this._initialised = true;
             };
             AgGridNg2.prototype.ngOnChanges = function (changes) {
-                grid.ComponentUtil.processOnChange(changes, this.gridOptions, this);
+                if (this._initialised) {
+                    grid.ComponentUtil.processOnChange(changes, this.gridOptions, this.api);
+                }
             };
             AgGridNg2.prototype.ngOnDestroy = function () {
                 this.api.destroy();
@@ -11724,6 +11757,9 @@ var ag;
             AgGridNg2.prototype.globalEventListener = function (eventType, event) {
                 var emitter;
                 switch (eventType) {
+                    case grid.Events.EVENT_ROW_GROUP_OPENED:
+                        emitter = this.rowGroupOpened;
+                        break;
                     case grid.Events.EVENT_COLUMN_GROUP_OPENED:
                         emitter = this.columnGroupOpened;
                         break;
@@ -11738,6 +11774,9 @@ var ag;
                         break;
                     case grid.Events.EVENT_COLUMN_RESIZED:
                         emitter = this.columnResized;
+                        break;
+                    case grid.Events.EVENT_COLUMN_BEFORE_RESIZE:
+                        emitter = this.columnBeforeResize;
                         break;
                     case grid.Events.EVENT_COLUMN_VALUE_CHANGE:
                         emitter = this.columnValueChanged;
@@ -11828,14 +11867,15 @@ var ag;
                         'modelUpdated', 'cellClicked', 'cellDoubleClicked', 'cellContextMenu', 'cellValueChanged', 'cellFocused',
                         'rowSelected', 'rowDeselected', 'selectionChanged', 'beforeFilterChanged', 'afterFilterChanged',
                         'filterModified', 'beforeSortChanged', 'afterSortChanged', 'virtualRowRemoved',
-                        'rowClicked', 'rowDoubleClicked', 'ready', 'gridSizeChanged',
+                        'rowClicked', 'rowDoubleClicked', 'ready', 'gridSizeChanged', 'rowGroupOpened',
                         // column events
                         'columnEverythingChanged', 'columnRowGroupChanged', 'columnValueChanged', 'columnMoved',
-                        'columnVisible', 'columnGroupOpened', 'columnResized', 'columnPinnedCountChanged'],
+                        'columnVisible', 'columnGroupOpened', 'columnBeforeResize', 'columnResized', 'columnPinnedCountChanged'],
                     inputs: ['gridOptions']
                         .concat(grid.ComponentUtil.SIMPLE_PROPERTIES)
                         .concat(grid.ComponentUtil.SIMPLE_BOOLEAN_PROPERTIES)
                         .concat(grid.ComponentUtil.SIMPLE_NUMBER_PROPERTIES)
+                        .concat(grid.ComponentUtil.WITH_IMPACT_STRING_PROPERTIES)
                         .concat(grid.ComponentUtil.WITH_IMPACT_OTHER_PROPERTIES)
                         .concat(grid.ComponentUtil.WITH_IMPACT_BOOLEAN_PROPERTIES)
                         .concat(grid.ComponentUtil.WITH_IMPACT_NUMBER_PROPERTIES)
@@ -11927,7 +11967,9 @@ var ag;
                 this.onChange(changeObject);
             };
             AgileGridProto.onChange = function (changes) {
-                grid.ComponentUtil.processOnChange(changes, this.gridOptions, this);
+                if (this._initialised) {
+                    grid.ComponentUtil.processOnChange(changes, this.gridOptions, this.api);
+                }
             };
             AgileGridProto.__agGridGetProperty = function (key) {
                 if (!this.__attributes) {
