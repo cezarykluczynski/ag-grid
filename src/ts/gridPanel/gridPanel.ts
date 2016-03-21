@@ -509,10 +509,6 @@ module ag.grid {
 
             var newTopPosition = this.eBodyViewport.scrollTop + delta;
             targetPanel.scrollTop = newTopPosition;
-
-            // if we don't prevent default, then the whole browser will scroll also as well as the grid
-            event.preventDefault();
-            return false;
         }
 
         public setBodyContainerWidth() {
