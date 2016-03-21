@@ -9540,9 +9540,6 @@ var ag;
                 }
                 var newTopPosition = this.eBodyViewport.scrollTop + delta;
                 targetPanel.scrollTop = newTopPosition;
-                // if we don't prevent default, then the whole browser will scroll also as well as the grid
-                event.preventDefault();
-                return false;
             };
             GridPanel.prototype.setBodyContainerWidth = function () {
                 var mainRowWidth = this.columnModel.getBodyContainerWidth() + 'px';
